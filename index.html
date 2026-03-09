@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Steam Deck Layout Studio (MVP)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Steam Deck Layout Studio</h1>
+        <p class="sub">Visual-first layout editor (MVP)</p>
+      </div>
+      <div class="actions">
+        <button id="newLayoutBtn">New</button>
+        <button id="loadLayoutBtn">Load JSON</button>
+        <button id="saveLayoutBtn" class="primary">Save JSON</button>
+        <input id="fileInput" type="file" accept="application/json" hidden />
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel left">
+        <h2>Actions Library</h2>
+        <p class="muted">Drag or click an action, then assign it to a control.</p>
+        <ul id="actionLibrary" class="action-list"></ul>
+      </section>
+
+      <section class="panel center">
+        <div class="center-header">
+          <h2>3D Deck View</h2>
+          <div class="muted">Click a button to select. Assign from list.</div>
+        </div>
+        <div id="deckContainer"></div>
+      </section>
+
+      <section class="panel right">
+        <h2>Control Bindings</h2>
+        <div id="selectionInfo" class="selection">No control selected</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Control</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="bindingsTable"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <template id="bindingRowTemplate">
+      <tr>
+        <td class="control-name"></td>
+        <td>
+          <select class="action-select"></select>
+        </td>
+      </tr>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
