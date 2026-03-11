@@ -1,17 +1,33 @@
 # Steam Deck Layout Studio (MVP)
 
 A visual-first Steam Deck layout editor MVP with:
-- Interactive 3D deck view
-- Action library + bindings table sync
+- Interactive 3D deck view using Valve's Steam Deck shell CAD
+- Steam store game search + Steam community layout loading via local proxy
+- Parsed Steam Input bindings rendered as table rows and hideable 3D callout tags
 - JSON save/load layout workflow
 
 ## Run locally
 
 ```bash
-python3 -m http.server 8000
+node server.js
 ```
 
-Open `http://localhost:8000`.
+Open `http://127.0.0.1:8000`.
+
+`server.js` serves the app and proxies:
+- Steam store search for resolving game names to app IDs
+- SteamInputDB app pages for community layout metadata
+- Steam CDN layout VDF downloads for parsing
+
+The old static `python3 -m http.server` flow is not enough anymore because browser-side direct fetches to SteamInputDB/CDN are blocked by CORS.
+
+## Model source
+
+This app ships with Valve's official Steam Deck external shell STL from the public hardware CAD repository:
+`https://gitlab.steamos.cloud/SteamDeck/hardware`
+
+The included model asset is stored at `assets/steamdeck_shell.stl`.
+License: `CC BY-NC-SA 4.0` with attribution to Valve. See `assets/steamdeck_shell_LICENSE.txt`.
 
 ## Run online (free options)
 

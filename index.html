@@ -22,41 +22,119 @@
 
     <main class="workspace">
       <section class="panel left">
-        <h2>Actions Library</h2>
-        <p class="muted">Drag or click an action, then assign it to a control.</p>
-        <ul id="actionLibrary" class="action-list"></ul>
+        <h2>Community Layouts</h2>
+        <p class="muted">Search a Steam game, load SteamInput community layouts, and inspect their bindings on the mesh.</p>
+        <div class="community-search">
+          <input id="gameSearchInput" type="search" placeholder="Search game title" />
+          <button id="gameSearchBtn" type="button">Find Games</button>
+        </div>
+        <div id="selectedGameInfo" class="selection">No game selected</div>
+        <div class="community-filters">
+          <input id="layoutSearchInput" type="search" placeholder="Filter layouts" />
+          <div class="filter-row">
+            <label>
+              <span>Sort</span>
+              <select id="layoutSortSelect">
+                <option value="vote">Rank</option>
+                <option value="publication">Date</option>
+                <option value="trend">Trend</option>
+                <option value="text_search">Relevance</option>
+              </select>
+            </label>
+            <label>
+              <span>Controller</span>
+              <select id="controllerTypeSelect">
+                <option value="controller_neptune">Steam Deck</option>
+                <option value="">Any</option>
+                <option value="controller_xboxone">Xbox One</option>
+                <option value="controller_ps5">DualSense</option>
+                <option value="controller_switch_pro">Switch Pro</option>
+              </select>
+            </label>
+          </div>
+          <div class="filter-actions">
+            <button id="loadLayoutsBtn" type="button">Load Layouts</button>
+            <button id="toggleTagsBtn" type="button" class="mode-btn active">Tags On</button>
+          </div>
+        </div>
+        <div class="list-block">
+          <h3>Games</h3>
+          <ul id="gameResultsList" class="result-list"></ul>
+        </div>
+        <div class="list-block">
+          <h3>Layouts</h3>
+          <ul id="layoutResultsList" class="result-list"></ul>
+        </div>
+        <div id="layoutStatus" class="muted">Search for a game to start.</div>
       </section>
 
       <section class="panel center">
         <div class="center-header">
-          <h2>3D Deck View</h2>
-          <div class="muted">Click a button to select. Assign from list.</div>
+          <div>
+            <h2>3D Deck View</h2>
+            <div class="muted">Valve shell CAD loaded locally. Click a control to assign it.</div>
+          </div>
+          <div class="gizmo-modes">
+            <button id="paintRegionBtn" type="button" class="mode-btn">Paint Region</button>
+            <button id="clearRegionBtn" type="button" class="mode-btn">Clear Region</button>
+            <label class="brush-control">
+              <span>Brush</span>
+              <input id="paintBrushSize" type="range" min="1" max="10" value="3" />
+              <output id="paintBrushSizeValue">3</output>
+            </label>
+          </div>
         </div>
-        <div id="deckContainer"></div>
+        <div id="deckContainer">
+          <svg id="bindingLines" class="binding-lines"></svg>
+          <div id="bindingTags" class="binding-tags"></div>
+        </div>
+        <div id="deckStatus" class="deck-status muted">Loading Steam Deck shell model…</div>
+        <p class="model-credit muted">
+          Model source: Valve Steam Deck external shell CAD, licensed CC BY-NC-SA 4.0.
+        </p>
       </section>
 
       <section class="panel right">
         <h2>Control Bindings</h2>
         <div id="selectionInfo" class="selection">No control selected</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Control</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="bindingsTable"></tbody>
-        </table>
+        <div class="bindings-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Control</th>
+                <th>Binding</th>
+              </tr>
+            </thead>
+            <tbody id="bindingsTable"></tbody>
+          </table>
+        </div>
       </section>
     </main>
 
     <template id="bindingRowTemplate">
       <tr>
         <td class="control-name"></td>
-        <td>
-          <select class="action-select"></select>
-        </td>
+        <td class="binding-summary"></td>
       </tr>
+    </template>
+
+    <template id="gameResultTemplate">
+      <li>
+        <button type="button" class="result-card game-result">
+          <span class="result-title"></span>
+          <span class="result-meta"></span>
+        </button>
+      </li>
+    </template>
+
+    <template id="layoutResultTemplate">
+      <li>
+        <button type="button" class="result-card layout-result">
+          <span class="result-title"></span>
+          <span class="result-meta"></span>
+          <span class="result-description"></span>
+        </button>
+      </li>
     </template>
 
     <script type="module" src="app.js"></script>
