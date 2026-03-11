@@ -42,10 +42,12 @@ const state = {
   selectedGame: null,
   communityLayouts: [],
   loadedLayoutMeta: null,
+  selectedLayoutDetail: null,
   paintBrushSize: 3,
   paintMode: false,
   selectedControlId: null,
-  showBindingTags: true,
+  bindingOverlayVisible: true,
+  communityDialogOpen: false,
   bindings: Object.fromEntries(controls.map((c) => [c.id, []]))
 };
 
@@ -60,12 +62,19 @@ const el = {
   selectedGameInfo: document.getElementById("selectedGameInfo"),
   layoutSearchInput: document.getElementById("layoutSearchInput"),
   layoutSortSelect: document.getElementById("layoutSortSelect"),
-  controllerTypeSelect: document.getElementById("controllerTypeSelect"),
-  loadLayoutsBtn: document.getElementById("loadLayoutsBtn"),
-  toggleTagsBtn: document.getElementById("toggleTagsBtn"),
+  toggleOverlayBtn: document.getElementById("toggleOverlayBtn"),
   gameResultsList: document.getElementById("gameResultsList"),
   layoutResultsList: document.getElementById("layoutResultsList"),
   layoutStatus: document.getElementById("layoutStatus"),
+  openCommunityBtn: document.getElementById("openCommunityBtn"),
+  communityDialogBackdrop: document.getElementById("communityDialogBackdrop"),
+  communityDialogCloseBtn: document.getElementById("communityDialogCloseBtn"),
+  layoutDetailTitle: document.getElementById("layoutDetailTitle"),
+  layoutDetailMeta: document.getElementById("layoutDetailMeta"),
+  layoutDetailDescription: document.getElementById("layoutDetailDescription"),
+  layoutDetailTags: document.getElementById("layoutDetailTags"),
+  dialogLoadLayoutBtn: document.getElementById("dialogLoadLayoutBtn"),
+  currentCommunitySummary: document.getElementById("currentCommunitySummary"),
   bindingsTable: document.getElementById("bindingsTable"),
   selectionInfo: document.getElementById("selectionInfo"),
   paintRegionBtn: document.getElementById("paintRegionBtn"),
@@ -82,7 +91,8 @@ const el = {
   deckContainer: document.getElementById("deckContainer"),
   deckStatus: document.getElementById("deckStatus"),
   bindingLines: document.getElementById("bindingLines"),
-  bindingTags: document.getElementById("bindingTags")
+  bindingTags: document.getElementById("bindingTags"),
+  dropHint: document.getElementById("dropHint")
 };
 
 const raycaster = new THREE.Raycaster();
@@ -106,6 +116,11 @@ renderBindings();
 loadDefaultLayout();
 
 function initUI() {
+  el.openCommunityBtn.addEventListener("click", showCommunityDialog);
+  el.communityDialogCloseBtn.addEventListener("click", hideCommunityDialog);
+  el.communityDialogBackdrop.addEventListener("click", (event) => {
+    if (event.target === el.communityDialogBackdrop) hideCommunityDialog();
+  });
   el.gameSearchBtn.addEventListener("click", () => searchGames());
   el.gameSearchInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") searchGames();
@@ -113,12 +128,37 @@ function initUI() {
   el.layoutSearchInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") loadCommunityLayouts();
   });
-  el.loadLayoutsBtn.addEventListener("click", () => loadCommunityLayouts());
-  el.toggleTagsBtn.addEventListener("click", () => {
-    state.showBindingTags = !state.showBindingTags;
-    el.toggleTagsBtn.textContent = state.showBindingTags ? "Tags On" : "Tags Off";
-    el.toggleTagsBtn.classList.toggle("active", state.showBindingTags);
+  el.toggleOverlayBtn.addEventListener("click", () => {
+    state.bindingOverlayVisible = !state.bindingOverlayVisible;
+    el.toggleOverlayBtn.classList.toggle("active", state.bindingOverlayVisible);
     renderBindingOverlays();
+  });
+  el.dialogLoadLayoutBtn.addEventListener("click", () => {
+    if (state.selectedLayoutDetail) loadCommunityLayout(state.selectedLayoutDetail);
+  });
+  el.deckContainer.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    el.dropHint.classList.add("active");
+  });
+  el.deckContainer.addEventListener("dragleave", () => {
+    el.dropHint.classList.remove("active");
+  });
+  el.deckContainer.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    el.dropHint.classList.remove("active");
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      applyLayoutData(json, true);
+      renderBindings();
+      updateSelectionInfo();
+      renderBindingOverlays();
+      setLayoutStatus("Layout loaded from drop.", false);
+    } catch {
+      setLayoutStatus("Invalid JSON dropped.", true);
+    }
   });
 
   el.newLayoutBtn.addEventListener("click", () => {
@@ -135,40 +175,14 @@ function initUI() {
     renderBindings();
   });
 
-  el.saveLayoutBtn.addEventListener("click", () => {
-    const payload = {
-      version: 1,
-      name: "My Steam Deck Layout",
-      savedAt: new Date().toISOString(),
-      bindings: state.bindings,
-      loadedLayoutMeta: state.loadedLayoutMeta,
-      controlPositions: Object.fromEntries(controls.map((control) => [control.id, control.pos])),
-      controlRotations: Object.fromEntries(controls.map((control) => [control.id, control.rotation])),
-      controlScales: Object.fromEntries(controls.map((control) => [control.id, control.scale])),
-      paintRegions: serializePaintRegions(),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "steamdeck-layout.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  el.loadLayoutBtn.addEventListener("click", () => el.fileInput.click());
+  el.saveLayoutBtn.addEventListener("click", saveLayoutToStorage);
+  el.loadLayoutBtn.addEventListener("click", loadLayoutFromStorage);
   el.fileInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    try {
-      const json = JSON.parse(text);
-      applyLayoutData(json, true);
-      renderBindings();
-      updateSelectionInfo();
-      renderBindingOverlays();
-    } catch {
-      alert("Invalid layout JSON file.");
-    }
+    await handleLayoutText(text);
+    e.target.value = "";
   });
 
   el.paintRegionBtn.addEventListener("click", togglePaintMode);
@@ -205,6 +219,7 @@ function applyLayoutData(json, requireBindings = true) {
     }
   }
   applyPendingPaintRegions();
+  updateCommunitySummary();
 }
 
 async function loadDefaultLayout() {
@@ -262,11 +277,29 @@ function updateSelectionInfo() {
   el.selectionInfo.textContent = `${control.name}${layoutLabel}\n${summary}`;
 }
 
+function updateCommunitySummary() {
+  if (!state.loadedLayoutMeta) {
+    el.currentCommunitySummary.textContent = "No layout loaded yet.";
+    return;
+  }
+  el.currentCommunitySummary.textContent = `${state.loadedLayoutMeta.title} • ${state.loadedLayoutMeta.controller_type_nice || "Community layout"}`;
+}
+
 function selectControl(controlId) {
   state.selectedControlId = controlId;
   updateSelectionInfo();
   recolorShellRegions();
   focusSelectedControl();
+}
+
+function showCommunityDialog() {
+  state.communityDialogOpen = true;
+  el.communityDialogBackdrop.classList.remove("hidden");
+}
+
+function hideCommunityDialog() {
+  state.communityDialogOpen = false;
+  el.communityDialogBackdrop.classList.add("hidden");
 }
 
 function formatBindingSummary(controlId) {
@@ -305,8 +338,8 @@ function renderGameResults() {
     button.addEventListener("click", () => {
       state.selectedGame = game;
       el.selectedGameInfo.textContent = `${game.name} (App ${game.id})`;
-      renderGameResults();
       loadCommunityLayouts();
+      renderGameResults();
     });
     el.gameResultsList.appendChild(fragment);
   });
@@ -320,10 +353,13 @@ async function loadCommunityLayouts() {
 
   const params = new URLSearchParams({
     appid: String(state.selectedGame.id),
-    searchtext: el.layoutSearchInput.value.trim(),
     sort: el.layoutSortSelect.value,
-    controller_type: el.controllerTypeSelect.value
+    controller_type: "controller_neptune"
   });
+  const searchText = el.layoutSearchInput.value.trim();
+  if (searchText && searchText !== "*") {
+    params.set("searchtext", searchText);
+  }
 
   setLayoutStatus(`Loading community layouts for ${state.selectedGame.name}...`);
   try {
@@ -343,6 +379,9 @@ async function loadCommunityLayouts() {
 }
 
 function renderCommunityLayouts() {
+  if (!state.selectedLayoutDetail || !state.communityLayouts.some((layout) => layout.file_id === state.selectedLayoutDetail?.file_id)) {
+    state.selectedLayoutDetail = state.communityLayouts[0] ?? null;
+  }
   el.layoutResultsList.innerHTML = "";
   state.communityLayouts.forEach((layout) => {
     const fragment = el.layoutResultTemplate.content.cloneNode(true);
@@ -354,36 +393,73 @@ function renderCommunityLayouts() {
       layout.subscriptions != null ? `${layout.subscriptions} subs` : null
     ].filter(Boolean).join(" • ");
     fragment.querySelector(".result-description").textContent = layout.description || "No description";
-    if (state.loadedLayoutMeta?.file_id === layout.file_id) button.classList.add("active");
+    if (state.selectedLayoutDetail?.file_id === layout.file_id) button.classList.add("active");
     button.disabled = !layout.file_url;
-    button.addEventListener("click", () => loadCommunityLayout(layout));
+    button.addEventListener("click", () => {
+      state.selectedLayoutDetail = layout;
+      renderCommunityLayouts();
+    });
     el.layoutResultsList.appendChild(fragment);
   });
+  renderLayoutDetail();
+}
+
+function renderLayoutDetail() {
+  const layout = state.selectedLayoutDetail;
+  if (!layout) {
+    el.layoutDetailTitle.textContent = "Select a layout";
+    el.layoutDetailMeta.textContent = "";
+    el.layoutDetailDescription.textContent = "";
+    el.layoutDetailTags.innerHTML = "";
+    el.dialogLoadLayoutBtn.disabled = true;
+    return;
+  }
+  el.layoutDetailTitle.textContent = layout.title || `Layout ${layout.file_id}`;
+  const meta = [
+    layout.controller_type_nice,
+    layout.votes?.score != null ? `${Math.round(layout.votes.score * 100)}%` : null,
+    layout.subscriptions != null ? `${layout.subscriptions} subs` : null
+  ]
+    .filter(Boolean)
+    .join(" • ");
+  el.layoutDetailMeta.textContent = meta;
+  el.layoutDetailDescription.textContent = layout.description || "No description";
+  el.layoutDetailTags.innerHTML = "";
+  (layout.tags ?? []).slice(0, 6).forEach((tag) => {
+    const span = document.createElement("span");
+    span.textContent = tag.replaceAll("_", " ");
+    el.layoutDetailTags.appendChild(span);
+  });
+  el.dialogLoadLayoutBtn.disabled = !layout.file_url;
 }
 
 async function loadCommunityLayout(layoutMeta) {
-  if (!layoutMeta.file_url) {
+  const target = layoutMeta ?? state.selectedLayoutDetail;
+  if (!target?.file_url) {
     setLayoutStatus("That layout does not expose a downloadable VDF.", true);
     return;
   }
 
-  setLayoutStatus(`Loading ${layoutMeta.title}...`);
+  setLayoutStatus(`Loading ${target.title}...`);
   try {
-    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(layoutMeta.file_url)}`);
+    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
     if (!response.ok) throw new Error("Layout fetch failed");
     const payload = await response.json();
     const parsed = parseVdf(payload.vdf);
     const bindings = extractBindingsFromLayout(parsed);
 
-    state.loadedLayoutMeta = layoutMeta;
+    state.loadedLayoutMeta = target;
     state.bindings = Object.fromEntries(controls.map((control) => [control.id, bindings[control.id] ?? []]));
     renderCommunityLayouts();
     renderBindings();
     updateSelectionInfo();
     renderBindingOverlays();
-    setLayoutStatus(`Loaded ${layoutMeta.title}. ${summarizeLoadedLayout(layoutMeta)}`);
+    state.selectedLayoutDetail = target;
+    renderLayoutDetail();
+    setLayoutStatus(`Loaded ${target.title}. ${summarizeLoadedLayout(target)}`);
+    updateCommunitySummary();
   } catch {
-    setLayoutStatus(`Failed to parse ${layoutMeta.title}.`, true);
+    setLayoutStatus(`Failed to parse ${target?.title ?? "selected layout"}.`, true);
   }
 }
 
@@ -398,6 +474,92 @@ function summarizeLoadedLayout(layoutMeta) {
 function setLayoutStatus(message, isError = false) {
   el.layoutStatus.textContent = message;
   el.layoutStatus.classList.toggle("error", isError);
+}
+
+function buildLayoutPayload() {
+  return {
+    version: 1,
+    name: "Steam Deck Layout Studio export",
+    savedAt: new Date().toISOString(),
+    bindings: state.bindings,
+    loadedLayoutMeta: state.loadedLayoutMeta,
+    controlPositions: Object.fromEntries(controls.map((control) => [control.id, control.pos])),
+    controlRotations: Object.fromEntries(controls.map((control) => [control.id, control.rotation])),
+    controlScales: Object.fromEntries(controls.map((control) => [control.id, control.scale])),
+    paintRegions: serializePaintRegions()
+  };
+}
+
+async function saveLayoutToStorage() {
+  const payload = buildLayoutPayload();
+  const text = JSON.stringify(payload, null, 2);
+  if ("showSaveFilePicker" in window) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "steamdeck-layout.json",
+        types: [
+          {
+            description: "JSON Files",
+            accept: { "application/json": [".json"] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      setLayoutStatus("Layout saved via File System Access.", false);
+    } catch (error) {
+      if (error.name !== "AbortError") setLayoutStatus("Saving layout failed.", true);
+    }
+  } else {
+    const blob = new Blob([text], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "steamdeck-layout.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setLayoutStatus("Layout downloaded locally.", false);
+  }
+}
+
+async function loadLayoutFromStorage() {
+  if ("showOpenFilePicker" in window) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [
+          {
+            description: "JSON Files",
+            accept: { "application/json": [".json"] }
+          }
+        ],
+        multiple: false
+      });
+      if (!handle) return;
+      const file = await handle.getFile();
+      const text = await file.text();
+      await handleLayoutText(text);
+      setLayoutStatus("Layout loaded via File System Access.", false);
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      setLayoutStatus("Loading layout failed.", true);
+      return;
+    }
+  }
+  el.fileInput.click();
+}
+
+async function handleLayoutText(text) {
+  try {
+    const json = JSON.parse(text);
+    applyLayoutData(json, true);
+    renderBindings();
+    updateSelectionInfo();
+    renderBindingOverlays();
+    setLayoutStatus("Layout loaded.", false);
+  } catch {
+    setLayoutStatus("Invalid layout data.", true);
+  }
 }
 
 function initScene() {
@@ -615,18 +777,22 @@ function setDeckStatus(message, isError = false) {
 }
 
 function renderBindingOverlays() {
-  if (!sceneCamera || !state.showBindingTags) {
+  if (!sceneCamera || !state.bindingOverlayVisible) {
     el.bindingTags.innerHTML = "";
     el.bindingLines.innerHTML = "";
     return;
   }
 
+  const time = performance.now();
   const visibleControls = controls
-    .map((control) => ({
-      control,
-      summary: state.bindings[control.id] ?? [],
-      projected: projectControlPosition(control)
-    }))
+    .map((control) => {
+      const summary = state.bindings[control.id] ?? [];
+      const projected = projectControlPosition(control);
+      const shortSummary = summary.length
+        ? summary[0].split(",")[0].slice(0, 20)
+        : "";
+      return { control, summary, projected, shortSummary, time };
+    })
     .filter((entry) => entry.summary.length && entry.projected.visible);
 
   if (!visibleControls.length) {
@@ -650,7 +816,8 @@ function renderBindingOverlays() {
     tag.className = `binding-tag${state.selectedControlId === entry.control.id ? " selected" : ""}`;
     tag.style.left = `${entry.tagX}px`;
     tag.style.top = `${entry.tagY}px`;
-    tag.innerHTML = `<strong>${entry.control.name}</strong>${entry.summary.map(escapeHtml).join("<br />")}`;
+    const summaryLine = entry.shortSummary || "Action";
+    tag.innerHTML = `<strong>${entry.control.name}</strong><span>${escapeHtml(summaryLine)}</span>`;
     tag.addEventListener("click", () => {
       selectControl(entry.control.id);
       renderBindings();
@@ -680,12 +847,16 @@ function layoutOverlayColumn(entries, side) {
   return entries.map((entry, index) => {
     const rawY = entry.projected.y * height - tagHeight / 2;
     const previous = index === 0 ? 12 : entries[index - 1]._tagBottom + minimumGap;
-    const tagY = Math.min(Math.max(rawY, previous), height - tagHeight - 12);
+    const jitterX = Math.sin((entry.time * 0.002) + entry.control.pos[0]) * 6;
+    const jitterY = Math.cos((entry.time * 0.002) + entry.control.pos[1]) * 4;
+    const tagY = clamp(Math.min(Math.max(rawY + jitterY, previous), height - tagHeight - 12), 12, height - tagHeight - 12);
+    const rawX = baseX + jitterX * (side === "left" ? -1 : 1);
+    const tagX = clamp(rawX, 12, width - tagWidth - 12);
     entry._tagBottom = tagY + tagHeight;
     return {
       ...entry,
       side,
-      tagX: baseX,
+      tagX,
       tagY,
       tagWidth,
       tagHeight
@@ -700,6 +871,10 @@ function projectControlPosition(control) {
     y: (-point.y + 1) / 2,
     visible: point.z >= -1 && point.z <= 1
   };
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function escapeHtml(value) {

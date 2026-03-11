@@ -23,49 +23,10 @@
     <main class="workspace">
       <section class="panel left">
         <h2>Community Layouts</h2>
-        <p class="muted">Search a Steam game, load SteamInput community layouts, and inspect their bindings on the mesh.</p>
-        <div class="community-search">
-          <input id="gameSearchInput" type="search" placeholder="Search game title" />
-          <button id="gameSearchBtn" type="button">Find Games</button>
-        </div>
-        <div id="selectedGameInfo" class="selection">No game selected</div>
-        <div class="community-filters">
-          <input id="layoutSearchInput" type="search" placeholder="Filter layouts" />
-          <div class="filter-row">
-            <label>
-              <span>Sort</span>
-              <select id="layoutSortSelect">
-                <option value="vote">Rank</option>
-                <option value="publication">Date</option>
-                <option value="trend">Trend</option>
-                <option value="text_search">Relevance</option>
-              </select>
-            </label>
-            <label>
-              <span>Controller</span>
-              <select id="controllerTypeSelect">
-                <option value="controller_neptune">Steam Deck</option>
-                <option value="">Any</option>
-                <option value="controller_xboxone">Xbox One</option>
-                <option value="controller_ps5">DualSense</option>
-                <option value="controller_switch_pro">Switch Pro</option>
-              </select>
-            </label>
-          </div>
-          <div class="filter-actions">
-            <button id="loadLayoutsBtn" type="button">Load Layouts</button>
-            <button id="toggleTagsBtn" type="button" class="mode-btn active">Tags On</button>
-          </div>
-        </div>
-        <div class="list-block">
-          <h3>Games</h3>
-          <ul id="gameResultsList" class="result-list"></ul>
-        </div>
-        <div class="list-block">
-          <h3>Layouts</h3>
-          <ul id="layoutResultsList" class="result-list"></ul>
-        </div>
-        <div id="layoutStatus" class="muted">Search for a game to start.</div>
+        <p class="muted">Click below to open the community layout browser.</p>
+        <button id="openCommunityBtn" class="primary" type="button">Browse Community Layouts</button>
+        <div id="currentCommunitySummary" class="selection">No layout loaded yet.</div>
+        <p class="muted">Use the deck view to drag &amp; drop `.json` files or use the Save/Load buttons in the header.</p>
       </section>
 
       <section class="panel center">
@@ -82,11 +43,13 @@
               <input id="paintBrushSize" type="range" min="1" max="10" value="3" />
               <output id="paintBrushSizeValue">3</output>
             </label>
+            <button id="toggleOverlayBtn" type="button" class="mode-btn active">Overlay</button>
           </div>
         </div>
         <div id="deckContainer">
           <svg id="bindingLines" class="binding-lines"></svg>
           <div id="bindingTags" class="binding-tags"></div>
+          <div id="dropHint" class="drop-hint">Drop layout JSON here</div>
         </div>
         <div id="deckStatus" class="deck-status muted">Loading Steam Deck shell model…</div>
         <p class="model-credit muted">
@@ -110,6 +73,53 @@
         </div>
       </section>
     </main>
+
+    <div id="communityDialogBackdrop" class="dialog-backdrop hidden">
+      <div class="community-dialog">
+        <header>
+          <h2>Community Layout Browser</h2>
+          <button id="communityDialogCloseBtn" type="button">&times;</button>
+        </header>
+        <div class="community-grid">
+          <div class="community-column community-games">
+            <label class="muted">
+              Search games
+              <input id="gameSearchInput" type="search" placeholder="Search game title" />
+            </label>
+            <button id="gameSearchBtn" type="button">Search</button>
+            <ul id="gameResultsList" class="result-list"></ul>
+          </div>
+          <div class="community-column community-layouts">
+            <div class="community-filters">
+              <label>
+                <span>Search layouts</span>
+                <input id="layoutSearchInput" type="search" placeholder="Filter layouts" />
+              </label>
+              <label>
+                <span>Sort</span>
+                <select id="layoutSortSelect">
+                  <option value="vote">Rank</option>
+                  <option value="publication">Date</option>
+                  <option value="trend">Trend</option>
+                  <option value="text_search">Relevance</option>
+                </select>
+              </label>
+            </div>
+            <ul id="layoutResultsList" class="result-list"></ul>
+          </div>
+          <div class="community-column community-details">
+            <div class="layout-detail">
+              <h3 id="layoutDetailTitle">Select a layout</h3>
+              <div id="layoutDetailMeta" class="muted"></div>
+              <p id="layoutDetailDescription"></p>
+              <div id="layoutDetailTags" class="tag-list"></div>
+              <button id="dialogLoadLayoutBtn" type="button" class="primary" disabled>Load Layout</button>
+            </div>
+          </div>
+        </div>
+        <footer id="layoutStatus" class="muted">Search for a game to start.</footer>
+      </div>
+    </div>
 
     <template id="bindingRowTemplate">
       <tr>

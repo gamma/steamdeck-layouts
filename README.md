@@ -3,8 +3,10 @@
 A visual-first Steam Deck layout editor MVP with:
 - Interactive 3D deck view using Valve's Steam Deck shell CAD
 - Steam store game search + Steam community layout loading via local proxy
-- Parsed Steam Input bindings rendered as table rows and hideable 3D callout tags
-- JSON save/load layout workflow
+- Full-screen community layout dialog (games/filter left, layouts middle, details right)
+- Parsed Steam Input bindings rendered as table rows and short hideable 3D callout tags
+- JSON save/load workflow plus drag&drop/layout storage API persistence
+- JSON save/load workflow plus drag&drop/layout storage API persistence
 
 ## Run locally
 
@@ -13,6 +15,7 @@ node server.js
 ```
 
 Open `http://127.0.0.1:8000`.
+Click “Browse Community Layouts” to open the dialog, which lays out games on the left, layout search/filter in the middle (it always queries Steam Deck layouts), and layout details/tags on the right; within the gallery the Overlay button toggles the short callouts and connector lines. Drag `.json` files onto the deck view or use the Save/Load buttons to leverage the File System Access API for local persistence (it falls back to download/upload when unsupported).
 
 `server.js` serves the app and proxies:
 - Steam store search for resolving game names to app IDs

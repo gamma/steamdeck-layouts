@@ -157,6 +157,112 @@ button.primary {
   overflow: hidden;
 }
 
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 15, 31, 0.85);
+  color: var(--accent);
+  font-size: 0.95rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.drop-hint.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.dialog-backdrop.hidden {
+  display: none;
+}
+
+.community-dialog {
+  background: #050917;
+  border-radius: 16px;
+  width: min(1200px, 90vw);
+  max-height: 90vh;
+  padding: 1.2rem;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.community-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.community-grid {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr 1fr;
+  gap: 1rem;
+  height: 50vh;
+}
+
+.community-column {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: rgba(24, 39, 68, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.community-column input,
+.community-column select {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: #0d1732;
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+}
+
+.community-filters {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.community-details .layout-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag-list span {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.72rem;
+}
+
 .deck-status,
 .model-credit {
   margin-top: 0.75rem;
@@ -218,6 +324,7 @@ button.primary {
   display: grid;
   gap: 0.5rem;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .result-card {
@@ -327,6 +434,8 @@ tr.selected td {
   line-height: 1.35;
   pointer-events: auto;
   cursor: pointer;
+  mix-blend-mode: multiply;
+  opacity: 0.85;
 }
 
 .binding-tag strong {
