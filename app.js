@@ -837,16 +837,40 @@ function renderBindingOverlays() {
 
   el.bindingTags.innerHTML = "";
   const lineParts = [];
+  let selectedEntry = null;
   for (const entry of layouts) {
     const pointX = entry.projected.x * el.deckContainer.clientWidth;
     const pointY = entry.projected.y * el.deckContainer.clientHeight;
     const selected = state.selectedControlId === entry.control.id;
+    if (selected) selectedEntry = entry;
     lineParts.push(
       `<polyline class="binding-line${selected ? " selected" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
       `<circle class="binding-bubble${selected ? " selected" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
     );
   }
   el.bindingLines.innerHTML = lineParts.join("");
+
+  if (selectedEntry) {
+    const label = document.createElement("div");
+    label.className = "selected-binding-label";
+    label.textContent = summarizeOverlayBinding(selectedEntry.control.id);
+    let dx = selectedEntry.projected.x - pivot.x;
+    let dy = selectedEntry.projected.y - pivot.y;
+    const magnitude = Math.hypot(dx, dy) || 1;
+    dx /= magnitude;
+    dy /= magnitude;
+    label.style.left = `${selectedEntry.anchorX + dx * 16}px`;
+    label.style.top = `${selectedEntry.anchorY + dy * 16}px`;
+    label.style.transform = "translate(-50%, -50%)";
+    el.bindingTags.appendChild(label);
+  }
+}
+
+function summarizeOverlayBinding(controlId) {
+  const entries = state.bindings[controlId] ?? [];
+  if (!entries.length) return "Unmapped";
+  if (entries.length <= 2) return entries.join(" + ");
+  return `${entries.slice(0, 2).join(" + ")} +${entries.length - 2}`;
 }
 
 function computeOverlayPivot(entries) {

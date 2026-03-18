@@ -478,6 +478,23 @@ tr.selected td {
   fill: rgba(255, 115, 115, 0.96);
 }
 
+.selected-binding-label {
+  position: absolute;
+  max-width: min(280px, 48vw);
+  padding: 0.28rem 0.46rem;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 115, 115, 0.55);
+  background: rgba(10, 18, 30, 0.92);
+  color: #ffe5e5;
+  font-size: 0.71rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
 .muted.error {
   color: var(--danger);
 }
