@@ -55,6 +55,7 @@ const MODEL_URL = "./assets/steamdeck_shell.stl";
 const DEFAULT_LAYOUT_URL = "./saved-layouts/steamdeck-layout-2026-03-11.json";
 const TARGET_MODEL_WIDTH = 4.35;
 const FALLBACK_BODY_SIZE = [4.3, 1.8, 1.25];
+const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M"];
 
 const el = {
   gameSearchInput: document.getElementById("gameSearchInput"),
@@ -82,6 +83,7 @@ const el = {
   paintBrushSize: document.getElementById("paintBrushSize"),
   paintBrushSizeValue: document.getElementById("paintBrushSizeValue"),
   newLayoutBtn: document.getElementById("newLayoutBtn"),
+  debugMapBtn: document.getElementById("debugMapBtn"),
   saveLayoutBtn: document.getElementById("saveLayoutBtn"),
   loadLayoutBtn: document.getElementById("loadLayoutBtn"),
   fileInput: document.getElementById("fileInput"),
@@ -174,6 +176,7 @@ function initUI() {
     selectControl(null);
     renderBindings();
   });
+  el.debugMapBtn.addEventListener("click", applyDebugBindings);
 
   el.saveLayoutBtn.addEventListener("click", saveLayoutToStorage);
   el.loadLayoutBtn.addEventListener("click", loadLayoutFromStorage);
@@ -474,6 +477,17 @@ function summarizeLoadedLayout(layoutMeta) {
 function setLayoutStatus(message, isError = false) {
   el.layoutStatus.textContent = message;
   el.layoutStatus.classList.toggle("error", isError);
+}
+
+function applyDebugBindings() {
+  controls.forEach((control, index) => {
+    const key = DEBUG_KEY_SEQUENCE[index] ?? `F${13 + (index - DEBUG_KEY_SEQUENCE.length)}`;
+    state.bindings[control.id] = [`Keyboard: ${key}`];
+  });
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+  setLayoutStatus("Debug bindings applied to all controls.", false);
 }
 
 function buildLayoutPayload() {
