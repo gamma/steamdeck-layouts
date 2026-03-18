@@ -1076,14 +1076,21 @@ function projectControlNormalDirection(control, projected) {
 
 function getControlSurfaceNormal(control) {
   const cached = controlSurfaceNormals.get(control.id);
-  if (cached) return cached;
+  if (cached) return applyRearNormalBias(control, cached.clone());
   const fallback = getFallbackRegionNormal(control).clone();
   const controlPoint = new THREE.Vector3(...control.pos);
   const outward = controlPoint.sub(overlayDeckCenter);
   if (outward.lengthSq() > 1e-6 && fallback.dot(outward) < 0) {
     fallback.multiplyScalar(-1);
   }
-  return fallback;
+  return applyRearNormalBias(control, fallback);
+}
+
+function applyRearNormalBias(control, normal) {
+  if (control.kind !== "rear") return normal;
+  const rearDown = new THREE.Vector3(0, -0.45, -1).normalize();
+  normal.multiplyScalar(0.35).addScaledVector(rearDown, 0.65).normalize();
+  return normal;
 }
 
 function clamp(value, min, max) {
@@ -1499,14 +1506,17 @@ function getFallbackRegionNormal(control) {
 }
 
 function getPreferredViewDirection(control, normal) {
+  if (control.kind === "rear") {
+    // Rear paddles should frame from the back side of the deck, not from the front.
+    const side = Math.sign(control.pos[0]) || 1;
+    return new THREE.Vector3(side * 0.28, 0.18, -1).normalize();
+  }
+
   const preferred = normal.clone();
   if (preferred.lengthSq() < 1e-6) return getFallbackRegionNormal(control);
 
   if (control.kind === "trigger" || control.kind === "bumper") {
     preferred.y += 0.55;
-  } else if (control.kind === "rear") {
-    preferred.y += 0.2;
-    preferred.z -= 0.1;
   } else {
     preferred.y += 0.12;
     preferred.z += preferred.z >= 0 ? 0.18 : -0.18;
