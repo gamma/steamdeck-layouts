@@ -60,7 +60,6 @@ const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A
 const el = {
   gameSearchInput: document.getElementById("gameSearchInput"),
   gameSearchBtn: document.getElementById("gameSearchBtn"),
-  selectedGameInfo: document.getElementById("selectedGameInfo"),
   layoutSearchInput: document.getElementById("layoutSearchInput"),
   layoutSortSelect: document.getElementById("layoutSortSelect"),
   toggleOverlayBtn: document.getElementById("toggleOverlayBtn"),
@@ -99,6 +98,21 @@ const el = {
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+const overlayCameraPosition = new THREE.Vector3();
+const overlayControlPosition = new THREE.Vector3();
+const overlayProjectedPoint = new THREE.Vector3();
+const overlayProjectedTip = new THREE.Vector3();
+const overlayDeckCenter = new THREE.Vector3(0, 0.15, 0);
+const overlayCameraFromCenter = new THREE.Vector3();
+const overlayControlFromCenter = new THREE.Vector3();
+const overlayControlToCamera = new THREE.Vector3();
+const overlayFacingNormal = new THREE.Vector3();
+const overlayControlNormal = new THREE.Vector3();
+const overlayNormalTip = new THREE.Vector3();
+const overlayDirectionTip = new THREE.Vector3();
+const overlayDirectionAxis = new THREE.Vector3();
+const overlayRouteCache = new Map();
+const controlSurfaceNormals = new Map();
 let orbitControls;
 let sceneCamera;
 let shellMesh;
@@ -340,15 +354,17 @@ function renderGameResults() {
     if (state.selectedGame?.id === game.id) button.classList.add("active");
     button.addEventListener("click", () => {
       state.selectedGame = game;
-      el.selectedGameInfo.textContent = `${game.name} (App ${game.id})`;
-      loadCommunityLayouts();
+      // Game selection should always fetch all layouts for that app.
+      el.layoutSearchInput.value = "";
       renderGameResults();
+      void loadCommunityLayouts({ ignoreLayoutSearch: true });
     });
     el.gameResultsList.appendChild(fragment);
   });
 }
 
-async function loadCommunityLayouts() {
+async function loadCommunityLayouts(options = {}) {
+  const { ignoreLayoutSearch = false } = options;
   if (!state.selectedGame?.id) {
     setLayoutStatus("Select a game first.");
     return;
@@ -359,7 +375,7 @@ async function loadCommunityLayouts() {
     sort: el.layoutSortSelect.value,
     controller_type: "controller_neptune"
   });
-  const searchText = el.layoutSearchInput.value.trim();
+  const searchText = ignoreLayoutSearch ? "" : el.layoutSearchInput.value.trim();
   if (searchText && searchText !== "*") {
     params.set("searchtext", searchText);
   }
@@ -461,6 +477,7 @@ async function loadCommunityLayout(layoutMeta) {
     renderLayoutDetail();
     setLayoutStatus(`Loaded ${target.title}. ${summarizeLoadedLayout(target)}`);
     updateCommunitySummary();
+    hideCommunityDialog();
   } catch {
     setLayoutStatus(`Failed to parse ${target?.title ?? "selected layout"}.`, true);
   }
@@ -797,15 +814,15 @@ function renderBindingOverlays() {
     return;
   }
 
-  const time = performance.now();
   const visibleControls = controls
     .map((control) => {
       const summary = state.bindings[control.id] ?? [];
       const projected = projectControlPosition(control);
+      const normalDir = projectControlNormalDirection(control, projected);
       const shortSummary = summary.length
-        ? summary[0].split(",")[0].slice(0, 20)
+        ? summary[0].split(",")[0].slice(0, 16)
         : "";
-      return { control, summary, projected, shortSummary, time };
+      return { control, summary, projected, shortSummary, normalDir };
     })
     .filter((entry) => entry.summary.length && entry.projected.visible);
 
@@ -815,76 +832,258 @@ function renderBindingOverlays() {
     return;
   }
 
-  const leftEntries = visibleControls.filter((entry) => entry.projected.x < 0.5).sort((a, b) => a.projected.y - b.projected.y);
-  const rightEntries = visibleControls.filter((entry) => entry.projected.x >= 0.5).sort((a, b) => a.projected.y - b.projected.y);
-  const layouts = [
-    ...layoutOverlayColumn(leftEntries, "left"),
-    ...layoutOverlayColumn(rightEntries, "right")
-  ];
+  const pivot = computeOverlayPivot(visibleControls);
+  const layouts = layoutOverlayAnchors(visibleControls, pivot);
 
   el.bindingTags.innerHTML = "";
   const lineParts = [];
   for (const entry of layouts) {
-    const tag = document.createElement("button");
-    tag.type = "button";
-    tag.className = `binding-tag${state.selectedControlId === entry.control.id ? " selected" : ""}`;
-    tag.style.left = `${entry.tagX}px`;
-    tag.style.top = `${entry.tagY}px`;
-    const summaryLine = entry.shortSummary || "Action";
-    tag.innerHTML = `<strong>${entry.control.name}</strong><span>${escapeHtml(summaryLine)}</span>`;
-    tag.addEventListener("click", () => {
-      selectControl(entry.control.id);
-      renderBindings();
-    });
-    el.bindingTags.appendChild(tag);
-
-    const anchorX = entry.side === "left" ? entry.tagX + entry.tagWidth : entry.tagX;
-    const anchorY = entry.tagY + entry.tagHeight / 2;
     const pointX = entry.projected.x * el.deckContainer.clientWidth;
     const pointY = entry.projected.y * el.deckContainer.clientHeight;
+    const selected = state.selectedControlId === entry.control.id;
     lineParts.push(
-      `<line class="binding-line" x1="${pointX}" y1="${pointY}" x2="${anchorX}" y2="${anchorY}"></line>`
+      `<polyline class="binding-line${selected ? " selected" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
+      `<circle class="binding-bubble${selected ? " selected" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
     );
   }
   el.bindingLines.innerHTML = lineParts.join("");
 }
 
-function layoutOverlayColumn(entries, side) {
+function computeOverlayPivot(entries) {
+  if (!entries.length) return { x: 0.5, y: 0.5 };
+  const sortedX = entries.map((entry) => entry.projected.x).sort((a, b) => a - b);
+  const sortedY = entries.map((entry) => entry.projected.y).sort((a, b) => a - b);
+  const mid = Math.floor(entries.length / 2);
+  if (entries.length % 2 === 1) {
+    return { x: sortedX[mid], y: sortedY[mid] };
+  }
+  return {
+    x: (sortedX[mid - 1] + sortedX[mid]) / 2,
+    y: (sortedY[mid - 1] + sortedY[mid]) / 2
+  };
+}
+
+function layoutOverlayAnchors(entries, pivot) {
   const width = el.deckContainer.clientWidth;
   const height = el.deckContainer.clientHeight;
-  const tagWidth = Math.min(180, width * 0.28);
-  const tagHeight = 62;
-  const gutter = 14;
-  const minimumGap = 8;
-  const baseX = side === "left" ? gutter : width - tagWidth - gutter;
+  const margin = 8;
+  const bubbleDiameter = 10;
+  const stubWorldLength = 0.12;
+  const gapWorldLength = 0.31;
+  const placed = entries.map((entry) => {
+    const pointX = entry.projected.x * width;
+    const pointY = entry.projected.y * height;
+    const normalDirX = entry.normalDir?.x ?? 0;
+    const normalDirY = entry.normalDir?.y ?? -1;
+    const pxPerWorld = entry.normalDir?.pixelScale ?? 180;
+    const stubLength = clamp(stubWorldLength * pxPerWorld, 18, 70);
+    const gap = clamp(gapWorldLength * pxPerWorld, 24, 150);
+    let dx = entry.projected.x - pivot.x;
+    let dy = entry.projected.y - pivot.y;
+    if (Math.hypot(dx, dy) < 0.0001) {
+      dx = entry.projected.x - 0.5;
+      dy = entry.projected.y - 0.5;
+    }
+    const route = getStableOverlayRoute(entry.control.id, dx, dy);
+    const primary = route.primary;
+    const dir = route.dir;
+    const directionalDir = getControlDirectionalOverlay(entry.control);
+    const useDirectional = Boolean(directionalDir);
 
-  return entries.map((entry, index) => {
-    const rawY = entry.projected.y * height - tagHeight / 2;
-    const previous = index === 0 ? 12 : entries[index - 1]._tagBottom + minimumGap;
-    const jitterX = Math.sin((entry.time * 0.002) + entry.control.pos[0]) * 6;
-    const jitterY = Math.cos((entry.time * 0.002) + entry.control.pos[1]) * 4;
-    const tagY = clamp(Math.min(Math.max(rawY + jitterY, previous), height - tagHeight - 12), 12, height - tagHeight - 12);
-    const rawX = baseX + jitterX * (side === "left" ? -1 : 1);
-    const tagX = clamp(rawX, 12, width - tagWidth - 12);
-    entry._tagBottom = tagY + tagHeight;
+    let bubbleX = pointX;
+    let bubbleY = pointY;
+    const elbowX = pointX + normalDirX * stubLength;
+    const elbowY = pointY + normalDirY * stubLength;
+
+    if (useDirectional) {
+      bubbleX = elbowX + directionalDir.x * gap;
+      bubbleY = elbowY + directionalDir.y * gap;
+    } else if (primary === "x") {
+      bubbleX = elbowX + dir * gap;
+      bubbleY = pointY + clamp(dy * 18, -10, 10);
+    } else {
+      bubbleY = elbowY + dir * gap;
+      bubbleX = pointX + clamp(dx * 20, -12, 12);
+    }
+
+    bubbleX = clamp(bubbleX, margin + bubbleDiameter / 2, width - margin - bubbleDiameter / 2);
+    bubbleY = clamp(bubbleY, margin + bubbleDiameter / 2, height - margin - bubbleDiameter / 2);
+
     return {
       ...entry,
-      side,
-      tagX,
-      tagY,
-      tagWidth,
-      tagHeight
+      primary,
+      dir,
+      tagWidth: bubbleDiameter,
+      tagHeight: bubbleDiameter,
+      tagX: bubbleX,
+      tagY: bubbleY,
+      elbowX,
+      elbowY,
+      anchorX: bubbleX,
+      anchorY: bubbleY
     };
+  });
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (let i = 0; i < placed.length; i += 1) {
+      for (let j = i + 1; j < placed.length; j += 1) {
+        const a = placed[i];
+        const b = placed[j];
+        const dx = a.tagX - b.tagX;
+        const dy = a.tagY - b.tagY;
+        const overlapX = (a.tagWidth + b.tagWidth) / 2 + 4 - Math.abs(dx);
+        const overlapY = (a.tagHeight + b.tagHeight) / 2 + 4 - Math.abs(dy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        if (Math.abs(dy) <= Math.abs(dx)) {
+          const push = overlapY / 2;
+          a.tagY += dy >= 0 ? push : -push;
+          b.tagY += dy >= 0 ? -push : push;
+        } else {
+          const push = overlapX / 2;
+          a.tagX += dx >= 0 ? push : -push;
+          b.tagX += dx >= 0 ? -push : push;
+        }
+        a.tagX = clamp(a.tagX, margin + a.tagWidth / 2, width - margin - a.tagWidth / 2);
+        b.tagX = clamp(b.tagX, margin + b.tagWidth / 2, width - margin - b.tagWidth / 2);
+        a.tagY = clamp(a.tagY, margin + a.tagHeight / 2, height - margin - a.tagHeight / 2);
+        b.tagY = clamp(b.tagY, margin + b.tagHeight / 2, height - margin - b.tagHeight / 2);
+      }
+    }
+  }
+
+  return placed.map((entry) => {
+    const anchorX = entry.tagX;
+    const anchorY = entry.tagY;
+      return {
+        ...entry,
+        anchorX,
+        anchorY,
+        elbowX: entry.elbowX,
+        elbowY: entry.elbowY
+      };
   });
 }
 
+function getStableOverlayRoute(controlId, dx, dy) {
+  const AXIS_SWITCH_MARGIN = 0.05;
+  const SIGN_SWITCH_DEADZONE = 0.03;
+
+  const nextPrimary = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+  const nextDir = nextPrimary === "x"
+    ? (dx >= 0 ? 1 : -1)
+    : (dy >= 0 ? 1 : -1);
+
+  const cached = overlayRouteCache.get(controlId);
+  if (!cached) {
+    const initial = { primary: nextPrimary, dir: nextDir };
+    overlayRouteCache.set(controlId, initial);
+    return initial;
+  }
+
+  let primary = cached.primary;
+  let dir = cached.dir;
+  const dominance = Math.abs(Math.abs(dx) - Math.abs(dy));
+  if (nextPrimary !== primary && dominance > AXIS_SWITCH_MARGIN) {
+    primary = nextPrimary;
+    dir = nextDir;
+  }
+
+  const currentComponent = primary === "x" ? dx : dy;
+  const desiredDir = currentComponent >= 0 ? 1 : -1;
+  if (desiredDir !== dir && Math.abs(currentComponent) > SIGN_SWITCH_DEADZONE) {
+    dir = desiredDir;
+  }
+
+  const stable = { primary, dir };
+  overlayRouteCache.set(controlId, stable);
+  return stable;
+}
+
+function getControlDirectionalOverlay(control) {
+  if (control.id === "dpad_up" || control.id === "y") {
+    overlayDirectionAxis.set(0, 1, 0);
+  } else if (control.id === "dpad_down" || control.id === "a") {
+    overlayDirectionAxis.set(0, -1, 0);
+  } else if (control.id === "dpad_left" || control.id === "x") {
+    overlayDirectionAxis.set(-1, 0, 0);
+  } else if (control.id === "dpad_right" || control.id === "b") {
+    overlayDirectionAxis.set(1, 0, 0);
+  } else {
+    return null;
+  }
+
+  overlayControlPosition.set(control.pos[0], control.pos[1], control.pos[2]);
+  overlayDirectionTip.copy(overlayControlPosition).addScaledVector(overlayDirectionAxis, 0.18);
+  overlayProjectedPoint.copy(overlayControlPosition).project(sceneCamera);
+  overlayProjectedTip.copy(overlayDirectionTip).project(sceneCamera);
+  let dirX = (overlayProjectedTip.x - overlayProjectedPoint.x) * 0.5 * el.deckContainer.clientWidth;
+  let dirY = -(overlayProjectedTip.y - overlayProjectedPoint.y) * 0.5 * el.deckContainer.clientHeight;
+  const length = Math.hypot(dirX, dirY);
+  if (length < 1e-3) return null;
+  dirX /= length;
+  dirY /= length;
+  return { x: dirX, y: dirY };
+}
+
 function projectControlPosition(control) {
-  const point = new THREE.Vector3(...control.pos).project(sceneCamera);
+  overlayControlPosition.set(control.pos[0], control.pos[1], control.pos[2]);
+  overlayProjectedPoint.copy(overlayControlPosition).project(sceneCamera);
+  const inFrustum = (
+    overlayProjectedPoint.x >= -1 &&
+    overlayProjectedPoint.x <= 1 &&
+    overlayProjectedPoint.y >= -1 &&
+    overlayProjectedPoint.y <= 1 &&
+    overlayProjectedPoint.z >= -1 &&
+    overlayProjectedPoint.z <= 1
+  );
+  sceneCamera.getWorldPosition(overlayCameraPosition);
+  overlayCameraFromCenter.copy(overlayCameraPosition).sub(overlayDeckCenter).normalize();
+  overlayControlFromCenter.copy(overlayControlPosition).sub(overlayDeckCenter).normalize();
+  const hemisphereScore = overlayCameraFromCenter.dot(overlayControlFromCenter);
+  overlayControlToCamera.copy(overlayCameraPosition).sub(overlayControlPosition).normalize();
+  overlayFacingNormal.copy(getControlSurfaceNormal(control));
+  const facingScore = overlayFacingNormal.dot(overlayControlToCamera);
   return {
-    x: (point.x + 1) / 2,
-    y: (-point.y + 1) / 2,
-    visible: point.z >= -1 && point.z <= 1
+    x: (overlayProjectedPoint.x + 1) / 2,
+    y: (-overlayProjectedPoint.y + 1) / 2,
+    depth: (overlayProjectedPoint.z + 1) / 2,
+    visible: inFrustum && hemisphereScore > -0.02 && facingScore > 0.06
   };
+}
+
+function projectControlNormalDirection(control, projected) {
+  overlayControlPosition.set(control.pos[0], control.pos[1], control.pos[2]);
+  overlayControlNormal.copy(getControlSurfaceNormal(control));
+
+  overlayNormalTip.copy(overlayControlPosition).addScaledVector(overlayControlNormal, 0.18);
+  overlayProjectedPoint.copy(overlayControlPosition).project(sceneCamera);
+  overlayProjectedTip.copy(overlayNormalTip).project(sceneCamera);
+
+  let dirX = (overlayProjectedTip.x - overlayProjectedPoint.x) * 0.5 * el.deckContainer.clientWidth;
+  let dirY = -(overlayProjectedTip.y - overlayProjectedPoint.y) * 0.5 * el.deckContainer.clientHeight;
+  const length = Math.hypot(dirX, dirY);
+  if (length > 1e-3) {
+    return { x: dirX / length, y: dirY / length, pixelScale: length / 0.18 };
+  }
+
+  const fallbackX = projected.x - 0.5;
+  const fallbackY = projected.y - 0.5;
+  const fallbackLength = Math.hypot(fallbackX, fallbackY) || 1;
+  const fallbackDistance = overlayControlPosition.distanceTo(overlayCameraPosition);
+  const fallbackScale = (el.deckContainer.clientHeight / (2 * Math.tan(THREE.MathUtils.degToRad(sceneCamera.fov) / 2))) / Math.max(0.001, fallbackDistance);
+  return { x: fallbackX / fallbackLength, y: fallbackY / fallbackLength, pixelScale: fallbackScale };
+}
+
+function getControlSurfaceNormal(control) {
+  const cached = controlSurfaceNormals.get(control.id);
+  if (cached) return cached;
+  const fallback = getFallbackRegionNormal(control).clone();
+  const controlPoint = new THREE.Vector3(...control.pos);
+  const outward = controlPoint.sub(overlayDeckCenter);
+  if (outward.lengthSq() > 1e-6 && fallback.dot(outward) < 0) {
+    fallback.multiplyScalar(-1);
+  }
+  return fallback;
 }
 
 function clamp(value, min, max) {
@@ -1261,6 +1460,10 @@ function getPaintedRegionStats(regionFaces) {
   } else {
     normal.normalize();
   }
+  const outward = center.clone().sub(overlayDeckCenter);
+  if (outward.lengthSq() > 1e-6 && normal.dot(outward) < 0) {
+    normal.multiplyScalar(-1);
+  }
 
   let radius = 0.08;
   for (const faceIndex of regionFaces) {
@@ -1339,7 +1542,10 @@ function clearSelectedPaintRegion() {
       changed = true;
     }
   }
-  if (changed) recolorShellRegions();
+  if (changed) {
+    controlSurfaceNormals.delete(state.selectedControlId);
+    recolorShellRegions();
+  }
 }
 
 function clearAllPaintRegions() {
@@ -1348,6 +1554,7 @@ function clearAllPaintRegions() {
     return;
   }
   shellFaceOwners.fill(null);
+  controlSurfaceNormals.clear();
   shellPreviewFaces.clear();
   recolorShellRegions();
 }
@@ -1428,7 +1635,12 @@ function updateControlFromPaintedRegion(controlId) {
   const control = getControlById(controlId);
   if (!control || !shellGeometry) return;
   const regionFaces = getPaintedRegionFaces(controlId);
-  if (!regionFaces.length) return;
+  if (!regionFaces.length) {
+    controlSurfaceNormals.delete(controlId);
+    return;
+  }
+  const regionStats = getPaintedRegionStats(regionFaces);
+  if (regionStats) controlSurfaceNormals.set(controlId, regionStats.normal.clone());
   const anchor = getStableRegionAnchor(regionFaces);
   control.pos = [anchor.x, anchor.y, anchor.z];
   recolorShellRegions();

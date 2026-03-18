@@ -319,7 +319,7 @@ button.primary {
 .result-list {
   flex: 1;
   list-style: none;
-  padding: 0;
+  padding: 0.2rem 0 0.15rem;
   margin: 0;
   display: grid;
   gap: 0.5rem;
@@ -336,6 +336,14 @@ button.primary {
   background: #182744;
   padding: 0.7rem;
   cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.result-card:hover,
+.result-card:focus-visible {
+  border-color: rgba(98, 216, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(98, 216, 255, 0.25);
+  transform: translateY(-1px);
 }
 
 .result-card.active {
@@ -423,35 +431,51 @@ tr.selected td {
 
 .binding-tag {
   position: absolute;
-  max-width: 180px;
-  padding: 0.45rem 0.55rem;
-  border-radius: 10px;
+  width: 108px;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
   border: 1px solid rgba(98, 216, 255, 0.28);
-  background: rgba(12, 20, 34, 0.92);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  background: rgba(10, 18, 30, 0.88);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.26);
   color: var(--text);
-  font-size: 0.76rem;
-  line-height: 1.35;
+  font-size: 0.66rem;
+  line-height: 1.15;
+  text-align: center;
   pointer-events: auto;
   cursor: pointer;
-  mix-blend-mode: multiply;
-  opacity: 0.85;
-}
-
-.binding-tag strong {
-  display: block;
-  margin-bottom: 0.2rem;
-  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
 }
 
 .binding-tag.selected {
   border-color: rgba(255, 115, 115, 0.75);
-  box-shadow: 0 0 0 1px rgba(255, 115, 115, 0.4), 0 8px 22px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(255, 115, 115, 0.45), 0 5px 14px rgba(0, 0, 0, 0.28);
+  opacity: 1;
 }
 
 .binding-line {
-  stroke: rgba(98, 216, 255, 0.6);
-  stroke-width: 1.5;
+  stroke: rgba(98, 216, 255, 0.45);
+  stroke-width: 1.15;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.binding-line.selected {
+  stroke: rgba(255, 115, 115, 0.75);
+}
+
+.binding-bubble {
+  fill: rgba(98, 216, 255, 0.92);
+  stroke: rgba(7, 12, 24, 0.95);
+  stroke-width: 1.2;
+}
+
+.binding-bubble.selected {
+  fill: rgba(255, 115, 115, 0.96);
 }
 
 .muted.error {
