@@ -319,6 +319,55 @@ button.primary {
   padding: 0.42rem 0.55rem;
 }
 
+.chord-picker {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: #0d1732;
+  padding: 0.3rem;
+}
+
+.chord-chips {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.chord-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  padding: 0.2rem 0.34rem;
+  border-radius: 6px;
+  border: 1px solid rgba(98, 216, 255, 0.55);
+  background: rgba(25, 63, 110, 0.34);
+  color: #e8f7ff;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.chord-chip button {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(155, 197, 255, 0.45);
+  background: rgba(8, 20, 38, 0.7);
+  color: #cfeaff;
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+#bindingEditorChordAdd {
+  min-width: 170px;
+  max-width: 220px;
+}
+
 .editor-step-add {
   display: flex;
   justify-content: flex-end;
@@ -575,6 +624,11 @@ button.primary {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
+}
+
+.editor-step-item.editing {
+  border-color: rgba(98, 216, 255, 0.42);
+  background: #11203a;
 }
 
 .step-label {

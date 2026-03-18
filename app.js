@@ -49,6 +49,7 @@ const state = {
   selectedActivatorIndex: 0,
   draftStepIndex: null,
   activeStepModifiers: [],
+  activeChordIds: [],
   bindingInputMode: "keys",
   bindingOverlayVisible: true,
   bindingEditorOpen: false,
@@ -136,7 +137,9 @@ const el = {
   bindingEditorToggleAdvancedBtn: document.getElementById("bindingEditorToggleAdvancedBtn"),
   bindingEditorAdvancedColumn: document.getElementById("bindingEditorAdvancedColumn"),
   bindingEditorAdvancedBody: document.getElementById("bindingEditorAdvancedBody"),
-  bindingEditorChord: document.getElementById("bindingEditorChord"),
+  bindingEditorChordPicker: document.getElementById("bindingEditorChordPicker"),
+  bindingEditorChordChips: document.getElementById("bindingEditorChordChips"),
+  bindingEditorChordAdd: document.getElementById("bindingEditorChordAdd"),
   bindingEditorToggle: document.getElementById("bindingEditorToggle"),
   bindingEditorInterruptable: document.getElementById("bindingEditorInterruptable"),
   bindingEditorTurbo: document.getElementById("bindingEditorTurbo"),
@@ -427,7 +430,7 @@ function formatActivatorSummary(activator) {
         const output = step?.output || "Unmapped";
         return step?.delayMs > 0 ? `${output} (+${step.delayMs}ms)` : output;
       })
-      .join(" -> ");
+      .join(" ⟶ ");
     parts.push(actionSummary);
   } else {
     parts.push(activator.binding || "Unmapped");
@@ -511,6 +514,12 @@ function initBindingEditor() {
     option.textContent = type.label;
     el.bindingEditorType.appendChild(option);
   });
+  controls.forEach((control) => {
+    const option = document.createElement("option");
+    option.value = control.id;
+    option.textContent = control.name;
+    el.bindingEditorChordAdd.appendChild(option);
+  });
 
   el.bindingEditorBackdrop.addEventListener("click", (event) => {
     if (event.target === el.bindingEditorBackdrop) hideBindingEditor();
@@ -532,10 +541,19 @@ function initBindingEditor() {
     state.bindingEditorAdvancedOpen = !state.bindingEditorAdvancedOpen;
     syncAdvancedVisibility();
   });
+  el.bindingEditorChordAdd.addEventListener("change", () => {
+    const nextId = el.bindingEditorChordAdd.value;
+    if (!nextId) return;
+    if (!state.activeChordIds.includes(nextId)) {
+      state.activeChordIds.push(nextId);
+      persistChordSelectionFromPicker();
+    }
+    el.bindingEditorChordAdd.value = "";
+    renderChordConditionPicker();
+  });
 
   const inputs = [
     el.bindingEditorType,
-    el.bindingEditorChord,
     el.bindingEditorToggle,
     el.bindingEditorInterruptable,
     el.bindingEditorTurbo,
@@ -724,7 +742,7 @@ function renderBindingEditor() {
     const item = document.createElement("li");
     item.className = `editor-list-item${index === state.selectedActivatorIndex ? " active" : ""}`;
     const title = ACTIVATOR_TYPES.find((entry) => entry.value === activator.type)?.label ?? "Regular Press";
-    const binding = activator.actions.length ? activator.actions.map((step) => step?.output || "Unmapped").join(" -> ") : (activator.binding || "Unmapped");
+    const binding = activator.actions.length ? activator.actions.map((step) => step?.output || "Unmapped").join(" ⟶ ") : (activator.binding || "Unmapped");
     item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(binding)}</span>`;
     item.addEventListener("click", () => {
       state.selectedActivatorIndex = index;
@@ -743,7 +761,7 @@ function renderBindingEditor() {
   }
   state.draftStepIndex = draftIndex;
   el.bindingEditorType.value = active.type;
-  el.bindingEditorChord.value = active.chord;
+  setChordSelectionFromValue(active.chord);
   el.bindingEditorToggle.checked = active.toggle;
   el.bindingEditorInterruptable.checked = active.interruptable;
   el.bindingEditorTurbo.checked = active.turbo;
@@ -772,7 +790,7 @@ function renderActionStepList(actions) {
   el.bindingEditorStepAdd.classList.toggle("hidden", actions.length === 0);
   actions.forEach((step, index) => {
     const item = document.createElement("li");
-    item.className = "editor-step-item";
+    item.className = `editor-step-item${state.draftStepIndex === index ? " editing" : ""}`;
     const split = splitOutputModifiers(step.output);
     const stepLabel = split.payload || "Unmapped";
     const stepLabelClass = split.payload ? "step-label" : "step-label unmapped";
@@ -1051,7 +1069,7 @@ function updateSelectedActivatorFromEditor() {
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   active.type = el.bindingEditorType.value;
-  active.chord = el.bindingEditorChord.value.trim();
+  active.chord = getChordSelectionValue();
   active.toggle = el.bindingEditorToggle.checked;
   active.interruptable = el.bindingEditorInterruptable.checked;
   active.turbo = el.bindingEditorTurbo.checked;
@@ -1066,6 +1084,73 @@ function updateSelectedActivatorFromEditor() {
   active.actions = normalizeActivatorActions(active.actions);
   active.binding = active.actions[0]?.output ?? active.binding;
   renderBindingEditor();
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function parseChordValue(value) {
+  if (typeof value !== "string") return [];
+  const normalized = value
+    .split(/[+,]/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const resolved = normalized
+    .map((token) => {
+      const byId = controls.find((control) => control.id === token);
+      if (byId) return byId.id;
+      const byName = controls.find((control) => control.name.toLowerCase() === token.toLowerCase());
+      return byName?.id ?? null;
+    })
+    .filter(Boolean);
+  return [...new Set(resolved)];
+}
+
+function setChordSelectionFromValue(value) {
+  state.activeChordIds = parseChordValue(value);
+  renderChordConditionPicker();
+}
+
+function getChordSelectionValue() {
+  const ids = [...state.activeChordIds];
+  if (!ids.length) return "";
+  return ids
+    .map((id) => getControlById(id)?.name || id)
+    .join(", ");
+}
+
+function renderChordConditionPicker() {
+  const selected = state.activeChordIds.filter((id) => Boolean(getControlById(id)));
+  state.activeChordIds = [...new Set(selected)];
+  el.bindingEditorChordChips.innerHTML = "";
+  state.activeChordIds.forEach((id) => {
+    const control = getControlById(id);
+    if (!control) return;
+    const chip = document.createElement("span");
+    chip.className = "chord-chip";
+    chip.innerHTML = `${escapeHtml(control.name)}<button type="button" data-remove-id="${id}" aria-label="Remove condition">×</button>`;
+    el.bindingEditorChordChips.appendChild(chip);
+  });
+  el.bindingEditorChordChips.querySelectorAll("button[data-remove-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const removeId = button.dataset.removeId;
+      state.activeChordIds = state.activeChordIds.filter((id) => id !== removeId);
+      persistChordSelectionFromPicker();
+      renderChordConditionPicker();
+    });
+  });
+  for (const option of el.bindingEditorChordAdd.options) {
+    if (!option.value) continue;
+    option.disabled = state.activeChordIds.includes(option.value);
+  }
+}
+
+function persistChordSelectionFromPicker() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  active.chord = getChordSelectionValue();
   renderBindings();
   updateSelectionInfo();
   renderBindingOverlays();

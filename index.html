@@ -184,8 +184,14 @@
               <button id="bindingEditorAddStepBtn" type="button">Add Step</button>
             </div>
             <label class="editor-field">
-              <span>Chord Modifier (optional)</span>
-              <input id="bindingEditorChord" type="text" placeholder="e.g. L5, Left Trigger Soft Pull" />
+              <span>Condition (hold controls)</span>
+              <div id="bindingEditorChordPicker" class="chord-picker">
+                <div id="bindingEditorChordChips" class="chord-chips"></div>
+                <select id="bindingEditorChordAdd">
+                  <option value="">+ Add control…</option>
+                </select>
+              </div>
+              <div class="editor-note">Select one or more Steam Deck controls that must be held.</div>
             </label>
             <label class="editor-check">
               <input id="bindingEditorToggle" type="checkbox" />
