@@ -67,6 +67,7 @@
               <tr>
                 <th>Control</th>
                 <th>Binding</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody id="bindingsTable"></tbody>
@@ -122,10 +123,145 @@
       </div>
     </div>
 
+    <div id="bindingEditorBackdrop" class="dialog-backdrop hidden">
+      <div class="binding-editor-dialog">
+        <header>
+          <h2 id="bindingEditorTitle">Edit Button</h2>
+          <div class="binding-editor-header-actions">
+            <button id="bindingEditorToggleAdvancedBtn" type="button">Advanced</button>
+            <button id="bindingEditorCloseBtn" type="button">&times;</button>
+          </div>
+        </header>
+        <div id="bindingEditorGrid" class="binding-editor-grid">
+          <section class="binding-editor-column">
+            <div class="binding-editor-toolbar">
+              <h3>Activators</h3>
+              <button id="bindingEditorAddActivatorBtn" type="button">+ Add</button>
+            </div>
+            <ul id="bindingEditorActivatorList" class="editor-list"></ul>
+          </section>
+          <section class="binding-editor-column">
+            <h3>Basic</h3>
+            <label class="editor-field">
+              <span>Activation Type</span>
+              <select id="bindingEditorType"></select>
+            </label>
+            <label class="editor-field">
+              <span>Action Sequence</span>
+              <div class="editor-note">Runs in order top-to-bottom. Use one step for normal bindings.</div>
+            </label>
+            <div class="modifier-builder">
+              <div class="input-mode-tabs">
+                <button id="bindingEditorModeKeysBtn" type="button" class="active">Keys + Modifiers</button>
+                <button id="bindingEditorModeMouseBtn" type="button">Mouse</button>
+              </div>
+              <div id="bindingEditorKeysPanel">
+                <div class="input-composer">
+                  <button id="modifierCtrlBtn" type="button" class="mod-btn">Ctrl</button>
+                  <button id="modifierShiftBtn" type="button" class="mod-btn">Shift</button>
+                  <button id="modifierAltBtn" type="button" class="mod-btn">Alt</button>
+                  <button id="modifierMetaBtn" type="button" class="mod-btn">Meta</button>
+                  <input id="bindingEditorStepInput" type="text" placeholder="Press a key…" />
+                  <button id="bindingEditorClearInputBtn" type="button" aria-label="Reset input">&times;</button>
+                </div>
+              </div>
+              <div id="bindingEditorMousePanel" class="hidden">
+              <div class="mouse-input-layout">
+                <div class="mouse-picker">
+                  <div class="mouse-shell">
+                    <div class="mouse-body-highlight" aria-hidden="true"></div>
+                    <div class="mouse-button-seam" aria-hidden="true"></div>
+                    <div class="mouse-wheel-track" aria-hidden="true"></div>
+                    <button id="mouseLeftBtn" type="button" class="mouse-hotspot left">LMB</button>
+                    <button id="mouseRightBtn" type="button" class="mouse-hotspot right">RMB</button>
+                    <button id="mouseMiddleBtn" type="button" class="mouse-hotspot middle" aria-label="Middle Mouse">●</button>
+                    <button id="mouseWheelUpBtn" type="button" class="mouse-hotspot wheel-up" aria-label="Wheel Up">▲</button>
+                    <button id="mouseWheelDownBtn" type="button" class="mouse-hotspot wheel-down" aria-label="Wheel Down">▼</button>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>
+            <ul id="bindingEditorStepList" class="editor-step-list"></ul>
+            <div id="bindingEditorStepAdd" class="editor-step-add hidden">
+              <button id="bindingEditorAddStepBtn" type="button">Add Step</button>
+            </div>
+            <label class="editor-field">
+              <span>Chord Modifier (optional)</span>
+              <input id="bindingEditorChord" type="text" placeholder="e.g. L5, Left Trigger Soft Pull" />
+            </label>
+            <label class="editor-check">
+              <input id="bindingEditorToggle" type="checkbox" />
+              <span>Toggle</span>
+            </label>
+            <label class="editor-check">
+              <input id="bindingEditorInterruptable" type="checkbox" checked />
+              <span>Interruptable</span>
+            </label>
+            <label class="editor-check">
+              <input id="bindingEditorTurbo" type="checkbox" />
+              <span>Hold to Repeat (Turbo)</span>
+            </label>
+            <label class="editor-check">
+              <input id="bindingEditorCycle" type="checkbox" />
+              <span>Cycle Binding</span>
+            </label>
+          </section>
+          <section id="bindingEditorAdvancedColumn" class="binding-editor-column hidden">
+            <div class="binding-editor-toolbar">
+              <h3>Advanced</h3>
+            </div>
+            <div id="bindingEditorAdvancedBody" class="advanced-body hidden">
+            <label class="editor-field">
+              <span>Double Tap Time (0.0-1.0)</span>
+              <input id="bindingEditorDoubleTap" type="number" min="0" max="1" step="0.01" />
+            </label>
+            <label class="editor-field">
+              <span>Long Press Time (0.0-1.0)</span>
+              <input id="bindingEditorLongPress" type="number" min="0" max="1" step="0.01" />
+            </label>
+            <label class="editor-field">
+              <span>Fire Start Delay (0.0-1.0)</span>
+              <input id="bindingEditorStartDelay" type="number" min="0" max="1" step="0.01" />
+            </label>
+            <label class="editor-field">
+              <span>Fire End Delay (0.0-1.0)</span>
+              <input id="bindingEditorEndDelay" type="number" min="0" max="1" step="0.01" />
+            </label>
+            <label class="editor-field">
+              <span>Repeat Rate (0.0-1.0)</span>
+              <input id="bindingEditorRepeatRate" type="number" min="0" max="1" step="0.01" />
+            </label>
+            <label class="editor-field">
+              <span>Haptics</span>
+              <select id="bindingEditorHaptics">
+                <option value="off">Off</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="editor-field">
+              <span>Notes</span>
+              <textarea id="bindingEditorNotes" rows="4" placeholder="Optional notes for this activator"></textarea>
+            </label>
+            </div>
+          </section>
+        </div>
+        <footer class="binding-editor-footer">
+          <button id="bindingEditorDeleteBtn" type="button">Delete Activator</button>
+          <button id="bindingEditorCloseFooterBtn" type="button">Done</button>
+        </footer>
+      </div>
+    </div>
+
     <template id="bindingRowTemplate">
       <tr>
         <td class="control-name"></td>
         <td class="binding-summary"></td>
+        <td class="binding-action-cell">
+          <button type="button" class="binding-edit-btn" aria-label="Edit binding">✎</button>
+        </td>
       </tr>
     </template>
 

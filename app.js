@@ -46,7 +46,13 @@ const state = {
   paintBrushSize: 3,
   paintMode: false,
   selectedControlId: null,
+  selectedActivatorIndex: 0,
+  draftStepIndex: null,
+  activeStepModifiers: [],
+  bindingInputMode: "keys",
   bindingOverlayVisible: true,
+  bindingEditorOpen: false,
+  bindingEditorAdvancedOpen: false,
   communityDialogOpen: false,
   bindings: Object.fromEntries(controls.map((c) => [c.id, []]))
 };
@@ -56,6 +62,14 @@ const DEFAULT_LAYOUT_URL = "./saved-layouts/steamdeck-layout-2026-03-11.json";
 const TARGET_MODEL_WIDTH = 4.35;
 const FALLBACK_BODY_SIZE = [4.3, 1.8, 1.25];
 const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M"];
+const ACTIVATOR_TYPES = [
+  { value: "regular_press", label: "Regular Press" },
+  { value: "double_press", label: "Double Press" },
+  { value: "long_press", label: "Long Press" },
+  { value: "start_press", label: "Start Press" },
+  { value: "release_press", label: "Release Press" },
+  { value: "chorded_press", label: "Chorded Press" }
+];
 
 const el = {
   gameSearchInput: document.getElementById("gameSearchInput"),
@@ -93,7 +107,49 @@ const el = {
   deckStatus: document.getElementById("deckStatus"),
   bindingLines: document.getElementById("bindingLines"),
   bindingTags: document.getElementById("bindingTags"),
-  dropHint: document.getElementById("dropHint")
+  dropHint: document.getElementById("dropHint"),
+  bindingEditorBackdrop: document.getElementById("bindingEditorBackdrop"),
+  bindingEditorGrid: document.getElementById("bindingEditorGrid"),
+  bindingEditorTitle: document.getElementById("bindingEditorTitle"),
+  bindingEditorCloseBtn: document.getElementById("bindingEditorCloseBtn"),
+  bindingEditorCloseFooterBtn: document.getElementById("bindingEditorCloseFooterBtn"),
+  bindingEditorActivatorList: document.getElementById("bindingEditorActivatorList"),
+  bindingEditorAddActivatorBtn: document.getElementById("bindingEditorAddActivatorBtn"),
+  bindingEditorDeleteBtn: document.getElementById("bindingEditorDeleteBtn"),
+  bindingEditorType: document.getElementById("bindingEditorType"),
+  bindingEditorStepInput: document.getElementById("bindingEditorStepInput"),
+  bindingEditorStepAdd: document.getElementById("bindingEditorStepAdd"),
+  bindingEditorAddStepBtn: document.getElementById("bindingEditorAddStepBtn"),
+  bindingEditorStepList: document.getElementById("bindingEditorStepList"),
+  bindingEditorModeKeysBtn: document.getElementById("bindingEditorModeKeysBtn"),
+  bindingEditorModeMouseBtn: document.getElementById("bindingEditorModeMouseBtn"),
+  bindingEditorKeysPanel: document.getElementById("bindingEditorKeysPanel"),
+  bindingEditorMousePanel: document.getElementById("bindingEditorMousePanel"),
+  bindingEditorClearInputBtn: document.getElementById("bindingEditorClearInputBtn"),
+  mouseLeftBtn: document.getElementById("mouseLeftBtn"),
+  mouseRightBtn: document.getElementById("mouseRightBtn"),
+  mouseMiddleBtn: document.getElementById("mouseMiddleBtn"),
+  mouseWheelUpBtn: document.getElementById("mouseWheelUpBtn"),
+  mouseWheelDownBtn: document.getElementById("mouseWheelDownBtn"),
+  modifierCtrlBtn: document.getElementById("modifierCtrlBtn"),
+  modifierShiftBtn: document.getElementById("modifierShiftBtn"),
+  modifierAltBtn: document.getElementById("modifierAltBtn"),
+  modifierMetaBtn: document.getElementById("modifierMetaBtn"),
+  bindingEditorToggleAdvancedBtn: document.getElementById("bindingEditorToggleAdvancedBtn"),
+  bindingEditorAdvancedColumn: document.getElementById("bindingEditorAdvancedColumn"),
+  bindingEditorAdvancedBody: document.getElementById("bindingEditorAdvancedBody"),
+  bindingEditorChord: document.getElementById("bindingEditorChord"),
+  bindingEditorToggle: document.getElementById("bindingEditorToggle"),
+  bindingEditorInterruptable: document.getElementById("bindingEditorInterruptable"),
+  bindingEditorTurbo: document.getElementById("bindingEditorTurbo"),
+  bindingEditorCycle: document.getElementById("bindingEditorCycle"),
+  bindingEditorDoubleTap: document.getElementById("bindingEditorDoubleTap"),
+  bindingEditorLongPress: document.getElementById("bindingEditorLongPress"),
+  bindingEditorStartDelay: document.getElementById("bindingEditorStartDelay"),
+  bindingEditorEndDelay: document.getElementById("bindingEditorEndDelay"),
+  bindingEditorRepeatRate: document.getElementById("bindingEditorRepeatRate"),
+  bindingEditorHaptics: document.getElementById("bindingEditorHaptics"),
+  bindingEditorNotes: document.getElementById("bindingEditorNotes")
 };
 
 const raycaster = new THREE.Raycaster();
@@ -129,7 +185,9 @@ let selectionAnimation = null;
 initUI();
 initScene();
 renderBindings();
+updateSelectionInfo();
 loadDefaultLayout();
+initBindingEditor();
 
 function initUI() {
   el.openCommunityBtn.addEventListener("click", showCommunityDialog);
@@ -253,13 +311,133 @@ async function loadDefaultLayout() {
 }
 
 function normalizeBindingValue(value) {
+  if (Array.isArray(value) && value.length && typeof value[0] === "object" && value[0] !== null && "type" in value[0]) {
+    return value.map((activator, index) => sanitizeActivator(activator, index));
+  }
   if (Array.isArray(value)) {
-    return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+    return value
+      .filter((item) => typeof item === "string" && item.trim())
+      .map((item, index) => createDefaultActivator(item.trim(), index));
   }
   if (typeof value === "string") {
-    return value === "Unmapped" || !value.trim() ? [] : [value.trim()];
+    return value === "Unmapped" || !value.trim() ? [] : [createDefaultActivator(value.trim(), 0)];
   }
   return [];
+}
+
+function createDefaultActivator(binding = "", index = 0) {
+  return {
+    id: `act_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+    type: "regular_press",
+    binding,
+    actions: binding ? [{ output: binding, delayMs: 0 }] : [],
+    chord: "",
+    toggle: false,
+    interruptable: true,
+    turbo: false,
+    cycleBinding: false,
+    doubleTapTime: 0.2,
+    longPressTime: 0.35,
+    fireStartDelay: 0,
+    fireEndDelay: 0,
+    repeatRate: 0.15,
+    haptics: "off",
+    notes: ""
+  };
+}
+
+function sanitizeActivator(value, index = 0) {
+  const base = createDefaultActivator("", index);
+  const knownTypes = new Set(ACTIVATOR_TYPES.map((item) => item.value));
+  const next = {
+    ...base,
+    ...value
+  };
+  next.id = typeof next.id === "string" && next.id ? next.id : base.id;
+  next.type = knownTypes.has(next.type) ? next.type : base.type;
+  next.binding = typeof next.binding === "string" ? next.binding.trim() : "";
+  next.actions = normalizeActivatorActions(next.actions);
+  if (!next.actions.length && next.binding) {
+    next.actions = [{ output: next.binding, delayMs: 0 }];
+  }
+  if (!next.binding && next.actions.length) {
+    next.binding = next.actions[0].output;
+  }
+  next.chord = typeof next.chord === "string" ? next.chord.trim() : "";
+  next.toggle = Boolean(next.toggle);
+  next.interruptable = Boolean(next.interruptable);
+  next.turbo = Boolean(next.turbo);
+  next.cycleBinding = Boolean(next.cycleBinding);
+  next.doubleTapTime = clampNumber(next.doubleTapTime, 0, 1, base.doubleTapTime);
+  next.longPressTime = clampNumber(next.longPressTime, 0, 1, base.longPressTime);
+  next.fireStartDelay = clampNumber(next.fireStartDelay, 0, 1, base.fireStartDelay);
+  next.fireEndDelay = clampNumber(next.fireEndDelay, 0, 1, base.fireEndDelay);
+  next.repeatRate = clampNumber(next.repeatRate, 0, 1, base.repeatRate);
+  next.haptics = ["off", "low", "medium", "high"].includes(next.haptics) ? next.haptics : "off";
+  next.notes = typeof next.notes === "string" ? next.notes.trim() : "";
+  return next;
+}
+
+function normalizeActivatorActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .map((step) => {
+      if (!step || typeof step !== "object") return null;
+      const output = typeof step.output === "string" ? step.output.trim() : "";
+      if (!output) return null;
+      const delayMs = Math.round(clampNumber(step.delayMs, 0, 2000, 0));
+      return { output, delayMs };
+    })
+    .filter(Boolean);
+}
+
+function clampNumber(value, min, max, fallback) {
+  if (!Number.isFinite(Number(value))) return fallback;
+  return Math.min(Math.max(Number(value), min), max);
+}
+
+function getControlActivators(controlId) {
+  if (state.bindingEditorOpen && state.selectedControlId === controlId) {
+    return getControlActivatorsForEditing(controlId);
+  }
+  const current = normalizeBindingValue(state.bindings[controlId]);
+  state.bindings[controlId] = current;
+  return current;
+}
+
+function getControlActivatorsForEditing(controlId) {
+  let current = state.bindings[controlId];
+  if (!Array.isArray(current)) {
+    current = normalizeBindingValue(current);
+    state.bindings[controlId] = current;
+  }
+  return current;
+}
+
+function getBindingSummaryEntries(controlId) {
+  return getControlActivators(controlId)
+    .filter((activator) => activator.actions.length || activator.binding || activator.chord)
+    .map((activator) => formatActivatorSummary(activator));
+}
+
+function formatActivatorSummary(activator) {
+  const typeLabel = ACTIVATOR_TYPES.find((item) => item.value === activator.type)?.label ?? "Regular Press";
+  const parts = [typeLabel];
+  if (activator.actions.length) {
+    const actionSummary = activator.actions
+      .map((step) => {
+        const output = step?.output || "Unmapped";
+        return step?.delayMs > 0 ? `${output} (+${step.delayMs}ms)` : output;
+      })
+      .join(" -> ");
+    parts.push(actionSummary);
+  } else {
+    parts.push(activator.binding || "Unmapped");
+  }
+  if (activator.chord) parts.push(`Chord: ${activator.chord}`);
+  if (activator.turbo) parts.push(`Turbo ${(activator.repeatRate * 100).toFixed(0)}%`);
+  if (activator.toggle) parts.push("Toggle");
+  return parts.join(" • ");
 }
 
 function renderBindings() {
@@ -269,6 +447,7 @@ function renderBindings() {
     const tr = fragment.querySelector("tr");
     const nameCell = fragment.querySelector(".control-name");
     const summaryCell = fragment.querySelector(".binding-summary");
+    const editBtn = fragment.querySelector(".binding-edit-btn");
 
     nameCell.textContent = control.name;
     summaryCell.textContent = formatBindingSummary(control.id);
@@ -276,6 +455,12 @@ function renderBindings() {
     tr.addEventListener("click", () => {
       selectControl(control.id);
       renderBindings();
+    });
+    editBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectControl(control.id);
+      renderBindings();
+      showBindingEditor();
     });
 
     if (state.selectedControlId === control.id) tr.classList.add("selected");
@@ -304,9 +489,11 @@ function updateCommunitySummary() {
 
 function selectControl(controlId) {
   state.selectedControlId = controlId;
+  state.selectedActivatorIndex = 0;
   updateSelectionInfo();
   recolorShellRegions();
   focusSelectedControl();
+  if (state.bindingEditorOpen) renderBindingEditor();
 }
 
 function showCommunityDialog() {
@@ -319,8 +506,519 @@ function hideCommunityDialog() {
   el.communityDialogBackdrop.classList.add("hidden");
 }
 
+function initBindingEditor() {
+  ACTIVATOR_TYPES.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type.value;
+    option.textContent = type.label;
+    el.bindingEditorType.appendChild(option);
+  });
+
+  el.bindingEditorBackdrop.addEventListener("click", (event) => {
+    if (event.target === el.bindingEditorBackdrop) hideBindingEditor();
+  });
+  el.bindingEditorCloseBtn.addEventListener("click", hideBindingEditor);
+  el.bindingEditorCloseFooterBtn.addEventListener("click", hideBindingEditor);
+  el.bindingEditorAddActivatorBtn.addEventListener("click", addActivatorForSelectedControl);
+  el.bindingEditorDeleteBtn.addEventListener("click", removeSelectedActivator);
+  el.bindingEditorAddStepBtn.addEventListener("click", addActionStepToSelectedActivator);
+  el.bindingEditorModeKeysBtn.addEventListener("click", () => setBindingInputMode("keys"));
+  el.bindingEditorModeMouseBtn.addEventListener("click", () => setBindingInputMode("mouse"));
+  el.bindingEditorClearInputBtn.addEventListener("click", clearSelectedInput);
+  el.mouseLeftBtn.addEventListener("click", () => applyMouseToken("Left Mouse"));
+  el.mouseRightBtn.addEventListener("click", () => applyMouseToken("Right Mouse"));
+  el.mouseMiddleBtn.addEventListener("click", () => applyMouseToken("Middle Mouse"));
+  el.mouseWheelUpBtn.addEventListener("click", () => applyMouseToken("Wheel Up"));
+  el.mouseWheelDownBtn.addEventListener("click", () => applyMouseToken("Wheel Down"));
+  el.bindingEditorToggleAdvancedBtn.addEventListener("click", () => {
+    state.bindingEditorAdvancedOpen = !state.bindingEditorAdvancedOpen;
+    syncAdvancedVisibility();
+  });
+  el.modifierCtrlBtn.addEventListener("click", () => toggleStepModifier("Ctrl"));
+  el.modifierShiftBtn.addEventListener("click", () => toggleStepModifier("Shift"));
+  el.modifierAltBtn.addEventListener("click", () => toggleStepModifier("Alt"));
+  el.modifierMetaBtn.addEventListener("click", () => toggleStepModifier("Meta"));
+
+  const inputs = [
+    el.bindingEditorType,
+    el.bindingEditorChord,
+    el.bindingEditorToggle,
+    el.bindingEditorInterruptable,
+    el.bindingEditorTurbo,
+    el.bindingEditorCycle,
+    el.bindingEditorDoubleTap,
+    el.bindingEditorLongPress,
+    el.bindingEditorStartDelay,
+    el.bindingEditorEndDelay,
+    el.bindingEditorRepeatRate,
+    el.bindingEditorHaptics,
+    el.bindingEditorNotes
+  ];
+  inputs.forEach((input) => {
+    const eventName = input.type === "checkbox" ? "change" : "input";
+    input.addEventListener(eventName, updateSelectedActivatorFromEditor);
+  });
+  el.bindingEditorStepInput.addEventListener("keydown", (event) => {
+    handleStepInputKeydown(event);
+  });
+  el.bindingEditorStepInput.addEventListener("input", () => {
+    normalizeStepInputAndModifiers(true);
+    syncCurrentInputFromEditor();
+  });
+  syncModifierButtons();
+  syncAdvancedVisibility();
+  syncInputModeTabs();
+}
+
+function buildTokenWithModifiers(token) {
+  if (!state.activeStepModifiers.length) return token;
+  return `${state.activeStepModifiers.join("+")}+${token}`;
+}
+
+function applyMouseToken(token) {
+  setBindingInputMode("mouse");
+  el.bindingEditorStepInput.value = token;
+  normalizeStepInputAndModifiers(true);
+  if (!state.bindingEditorOpen || !state.selectedControlId) {
+    syncCurrentInputFromEditor();
+    el.bindingEditorStepInput.focus();
+    return;
+  }
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) {
+    el.bindingEditorStepInput.focus();
+    return;
+  }
+  const composed = composeCurrentInput(token);
+  if (!active.actions.length) {
+    active.actions = [{ output: composed, delayMs: 0 }];
+    state.draftStepIndex = 0;
+  } else if (state.draftStepIndex == null || state.draftStepIndex < 0 || state.draftStepIndex >= active.actions.length) {
+    active.actions.push({ output: "", delayMs: 0 });
+    state.draftStepIndex = active.actions.length - 1;
+  }
+  active.actions[state.draftStepIndex].output = composed;
+  active.binding = active.actions[0]?.output ?? "";
+  renderActionStepList(active.actions);
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+  el.bindingEditorStepInput.focus();
+}
+
+function handleStepInputKeydown(event) {
+  if (event.key === "Backspace" || event.key === "Delete") {
+    event.preventDefault();
+    clearSelectedInput();
+    return;
+  }
+  if (event.key === "Tab") {
+    event.preventDefault();
+  }
+  const capture = captureKeypress(event);
+  if (!capture) return;
+  event.preventDefault();
+  setBindingInputMode("keys");
+  state.activeStepModifiers = capture.modifiers;
+  syncModifierButtons();
+  el.bindingEditorStepInput.value = capture.keyToken;
+  syncCurrentInputFromEditor();
+}
+
+function captureKeypress(event) {
+  const key = event.key;
+  if (!key || key === "Process") return null;
+  const modifiers = [];
+  if (event.ctrlKey || key === "Control") modifiers.push("Ctrl");
+  if (event.shiftKey || key === "Shift") modifiers.push("Shift");
+  if (event.altKey || key === "Alt") modifiers.push("Alt");
+  if (event.metaKey || key === "Meta") modifiers.push("Meta");
+  if (["Control", "Shift", "Alt", "Meta"].includes(key)) {
+    return { modifiers, keyToken: "" };
+  }
+  return { modifiers, keyToken: normalizeKeyToken(key) };
+}
+
+function normalizeKeyToken(key) {
+  if (key === " ") return "Space";
+  if (key === "Escape") return "Esc";
+  if (key === "ArrowUp") return "Up";
+  if (key === "ArrowDown") return "Down";
+  if (key === "ArrowLeft") return "Left";
+  if (key === "ArrowRight") return "Right";
+  if (key.length === 1) return key.toUpperCase();
+  return key;
+}
+
+function setBindingInputMode(mode) {
+  if (mode !== "keys" && mode !== "mouse") return;
+  state.bindingInputMode = mode;
+  syncInputModeTabs();
+}
+
+function syncInputModeTabs() {
+  const isMouse = state.bindingInputMode === "mouse";
+  el.bindingEditorModeKeysBtn.classList.toggle("active", !isMouse);
+  el.bindingEditorModeMouseBtn.classList.toggle("active", isMouse);
+  el.bindingEditorKeysPanel.classList.toggle("hidden", isMouse);
+  el.bindingEditorMousePanel.classList.toggle("hidden", !isMouse);
+}
+
+function toggleStepModifier(modifier) {
+  const index = state.activeStepModifiers.indexOf(modifier);
+  if (index >= 0) {
+    state.activeStepModifiers.splice(index, 1);
+  } else {
+    state.activeStepModifiers.push(modifier);
+  }
+  syncModifierButtons();
+}
+
+function clearStepModifiers() {
+  state.activeStepModifiers = [];
+  syncModifierButtons();
+  syncCurrentInputFromEditor();
+}
+
+function syncModifierButtons() {
+  const selected = new Set(state.activeStepModifiers);
+  el.modifierCtrlBtn.classList.toggle("active", selected.has("Ctrl"));
+  el.modifierShiftBtn.classList.toggle("active", selected.has("Shift"));
+  el.modifierAltBtn.classList.toggle("active", selected.has("Alt"));
+  el.modifierMetaBtn.classList.toggle("active", selected.has("Meta"));
+}
+
+function syncAdvancedVisibility() {
+  el.bindingEditorAdvancedColumn.classList.toggle("hidden", !state.bindingEditorAdvancedOpen);
+  el.bindingEditorAdvancedBody.classList.toggle("hidden", !state.bindingEditorAdvancedOpen);
+  el.bindingEditorGrid.classList.toggle("advanced-open", state.bindingEditorAdvancedOpen);
+  el.bindingEditorToggleAdvancedBtn.classList.toggle("active", state.bindingEditorAdvancedOpen);
+}
+
+function showBindingEditor() {
+  if (!state.selectedControlId) return;
+  const control = getControlById(state.selectedControlId);
+  el.bindingEditorTitle.textContent = `Edit ${control?.name ?? "Button"}`;
+  state.bindingEditorOpen = true;
+  state.bindingEditorAdvancedOpen = false;
+  state.bindingInputMode = "keys";
+  state.activeStepModifiers = [];
+  syncModifierButtons();
+  syncAdvancedVisibility();
+  syncInputModeTabs();
+  el.bindingEditorBackdrop.classList.remove("hidden");
+  const activators = getControlActivators(state.selectedControlId);
+  if (!activators.length) {
+    activators.push(createDefaultActivator("", 0));
+  }
+  state.selectedActivatorIndex = clamp(Math.floor(state.selectedActivatorIndex), 0, activators.length - 1);
+  renderBindingEditor();
+}
+
+function hideBindingEditor() {
+  state.bindingEditorOpen = false;
+  el.bindingEditorBackdrop.classList.add("hidden");
+}
+
+function renderBindingEditor() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivators(state.selectedControlId);
+  if (!activators.length) {
+    activators.push(createDefaultActivator("", 0));
+  }
+  state.selectedActivatorIndex = clamp(Math.floor(state.selectedActivatorIndex), 0, activators.length - 1);
+  el.bindingEditorActivatorList.innerHTML = "";
+  activators.forEach((activator, index) => {
+    const item = document.createElement("li");
+    item.className = `editor-list-item${index === state.selectedActivatorIndex ? " active" : ""}`;
+    const title = ACTIVATOR_TYPES.find((entry) => entry.value === activator.type)?.label ?? "Regular Press";
+    const binding = activator.actions.length ? activator.actions.map((step) => step?.output || "Unmapped").join(" -> ") : (activator.binding || "Unmapped");
+    item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(binding)}</span>`;
+    item.addEventListener("click", () => {
+      state.selectedActivatorIndex = index;
+      renderBindingEditor();
+    });
+    el.bindingEditorActivatorList.appendChild(item);
+  });
+
+  const active = activators[state.selectedActivatorIndex];
+  let draftIndex = null;
+  for (let index = active.actions.length - 1; index >= 0; index -= 1) {
+    if (!active.actions[index]?.output) {
+      draftIndex = index;
+      break;
+    }
+  }
+  state.draftStepIndex = draftIndex;
+  el.bindingEditorType.value = active.type;
+  el.bindingEditorChord.value = active.chord;
+  el.bindingEditorToggle.checked = active.toggle;
+  el.bindingEditorInterruptable.checked = active.interruptable;
+  el.bindingEditorTurbo.checked = active.turbo;
+  el.bindingEditorCycle.checked = active.cycleBinding;
+  el.bindingEditorDoubleTap.value = String(active.doubleTapTime);
+  el.bindingEditorLongPress.value = String(active.longPressTime);
+  el.bindingEditorStartDelay.value = String(active.fireStartDelay);
+  el.bindingEditorEndDelay.value = String(active.fireEndDelay);
+  el.bindingEditorRepeatRate.value = String(active.repeatRate);
+  el.bindingEditorHaptics.value = active.haptics;
+  el.bindingEditorNotes.value = active.notes;
+  if (active.actions.length === 0) {
+    populateInputFromOutput("");
+    syncCurrentInputFromEditor();
+  } else {
+    el.bindingEditorStepInput.value = "";
+    state.activeStepModifiers = [];
+    syncModifierButtons();
+  }
+  renderActionStepList(active.actions);
+}
+
+function renderActionStepList(actions) {
+  el.bindingEditorStepList.innerHTML = "";
+  el.bindingEditorStepAdd.classList.toggle("hidden", actions.length === 0);
+  actions.forEach((step, index) => {
+    const item = document.createElement("li");
+    item.className = "editor-step-item";
+    const stepLabel = step.output || "Unmapped";
+    item.innerHTML = `
+      <span class="step-label">${escapeHtml(stepLabel)}</span>
+      <label class="step-delay">
+        <span class="step-delay-label">Delay</span>
+        <input class="step-delay-input" type="number" min="0" max="2000" step="10" value="${step.delayMs}" data-index="${index}" />
+        <span>ms</span>
+      </label>
+      <div class="step-actions">
+        <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" data-action="down" data-index="${index}" ${index === actions.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" data-action="remove" data-index="${index}">✕</button>
+      </div>
+    `;
+    el.bindingEditorStepList.appendChild(item);
+  });
+  el.bindingEditorStepList.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.action;
+      const index = Number.parseInt(button.dataset.index ?? "-1", 10);
+      mutateActionStep(action, index);
+    });
+  });
+  el.bindingEditorStepList.querySelectorAll(".step-delay-input").forEach((input) => {
+    input.addEventListener("input", () => {
+      const index = Number.parseInt(input.dataset.index ?? "-1", 10);
+      const delayMs = Math.round(clampNumber(input.value, 0, 2000, 0));
+      updateActionStepDelay(index, delayMs);
+    });
+  });
+}
+
+function addActionStepToSelectedActivator() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  if (state.draftStepIndex != null && state.draftStepIndex >= 0 && state.draftStepIndex < active.actions.length && !active.actions[state.draftStepIndex]?.output) {
+    requestAnimationFrame(() => el.bindingEditorStepInput.focus());
+    return;
+  }
+  active.actions.push({ output: "", delayMs: 0 });
+  state.draftStepIndex = active.actions.length - 1;
+  active.binding = active.actions[0]?.output ?? "";
+  resetDraftStepInput();
+  renderActionStepList(active.actions);
+  requestAnimationFrame(() => el.bindingEditorStepInput.focus());
+}
+
+function mutateActionStep(action, index) {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active || index < 0 || index >= active.actions.length) return;
+  if (action === "remove") {
+    active.actions.splice(index, 1);
+    if (state.draftStepIndex === index) {
+      state.draftStepIndex = null;
+      resetDraftStepInput();
+    } else if (state.draftStepIndex != null && index < state.draftStepIndex) {
+      state.draftStepIndex -= 1;
+    }
+  } else if (action === "up" && index > 0) {
+    [active.actions[index - 1], active.actions[index]] = [active.actions[index], active.actions[index - 1]];
+    if (state.draftStepIndex === index) state.draftStepIndex = index - 1;
+    else if (state.draftStepIndex === index - 1) state.draftStepIndex = index;
+  } else if (action === "down" && index < active.actions.length - 1) {
+    [active.actions[index + 1], active.actions[index]] = [active.actions[index], active.actions[index + 1]];
+    if (state.draftStepIndex === index) state.draftStepIndex = index + 1;
+    else if (state.draftStepIndex === index + 1) state.draftStepIndex = index;
+  }
+  active.binding = active.actions[0]?.output ?? active.binding;
+  renderBindingEditor();
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function updateActionStepDelay(index, delayMs) {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active || index < 0 || index >= active.actions.length) return;
+  active.actions[index].delayMs = delayMs;
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function composeCurrentInput(rawInput) {
+  if (!rawInput) return "";
+  if (rawInput.includes("+")) return rawInput;
+  return buildTokenWithModifiers(rawInput);
+}
+
+function populateInputFromOutput(output) {
+  if (!output) {
+    el.bindingEditorStepInput.value = "";
+    state.activeStepModifiers = [];
+    syncModifierButtons();
+    return;
+  }
+  const parts = output.split("+").map((part) => part.trim()).filter(Boolean);
+  const modifiers = [];
+  const payload = [];
+  parts.forEach((part) => {
+    if (["Ctrl", "Shift", "Alt", "Meta"].includes(part)) {
+      modifiers.push(part);
+    } else {
+      payload.push(part);
+    }
+  });
+  state.activeStepModifiers = modifiers;
+  syncModifierButtons();
+  el.bindingEditorStepInput.value = payload.length ? payload.join("+") : output;
+}
+
+function normalizeStepInputAndModifiers(enforceSingleToken = false) {
+  const raw = el.bindingEditorStepInput.value.trim();
+  if (!raw || !raw.includes("+")) return;
+  const parts = raw.split("+").map((part) => part.trim()).filter(Boolean);
+  const modifiers = [];
+  const payload = [];
+  parts.forEach((part) => {
+    if (["Ctrl", "Shift", "Alt", "Meta"].includes(part)) {
+      if (!modifiers.includes(part)) modifiers.push(part);
+    } else {
+      payload.push(part);
+    }
+  });
+  if (!payload.length) {
+    state.activeStepModifiers = modifiers;
+    syncModifierButtons();
+    el.bindingEditorStepInput.value = "";
+    return;
+  }
+  if (enforceSingleToken && payload.length > 1) {
+    payload.splice(0, payload.length - 1);
+  }
+  state.activeStepModifiers = modifiers;
+  syncModifierButtons();
+  el.bindingEditorStepInput.value = payload.join("+");
+}
+
+function syncCurrentInputFromEditor() {
+  const raw = el.bindingEditorStepInput.value.trim();
+  const composed = raw ? composeCurrentInput(raw) : "";
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  if (active.actions.length === 0) {
+    if (composed) {
+      active.actions = [{ output: composed, delayMs: 0 }];
+      state.draftStepIndex = 0;
+      active.binding = composed;
+      renderActionStepList(active.actions);
+      renderBindings();
+      updateSelectionInfo();
+      renderBindingOverlays();
+    }
+    return;
+  }
+  if (state.draftStepIndex == null || state.draftStepIndex < 0 || state.draftStepIndex >= active.actions.length) {
+    state.draftStepIndex = active.actions.length - 1;
+  }
+  active.actions[state.draftStepIndex].output = composed;
+  active.binding = active.actions[0]?.output ?? "";
+  renderActionStepList(active.actions);
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function clearSelectedInput() {
+  resetDraftStepInput();
+  syncCurrentInputFromEditor();
+}
+
+function resetDraftStepInput() {
+  el.bindingEditorStepInput.value = "";
+  state.activeStepModifiers = [];
+  syncModifierButtons();
+}
+
+function addActivatorForSelectedControl() {
+  if (!state.selectedControlId) return;
+  const activators = getControlActivators(state.selectedControlId);
+  const next = createDefaultActivator("", activators.length);
+  activators.push(next);
+  state.selectedActivatorIndex = activators.length - 1;
+  renderBindingEditor();
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function removeSelectedActivator() {
+  if (!state.selectedControlId) return;
+  const activators = getControlActivators(state.selectedControlId);
+  if (!activators.length) return;
+  activators.splice(state.selectedActivatorIndex, 1);
+  if (!activators.length) activators.push(createDefaultActivator("", 0));
+  state.selectedActivatorIndex = clamp(state.selectedActivatorIndex, 0, activators.length - 1);
+  renderBindingEditor();
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function updateSelectedActivatorFromEditor() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  active.type = el.bindingEditorType.value;
+  active.chord = el.bindingEditorChord.value.trim();
+  active.toggle = el.bindingEditorToggle.checked;
+  active.interruptable = el.bindingEditorInterruptable.checked;
+  active.turbo = el.bindingEditorTurbo.checked;
+  active.cycleBinding = el.bindingEditorCycle.checked;
+  active.doubleTapTime = clampNumber(el.bindingEditorDoubleTap.value, 0, 1, active.doubleTapTime);
+  active.longPressTime = clampNumber(el.bindingEditorLongPress.value, 0, 1, active.longPressTime);
+  active.fireStartDelay = clampNumber(el.bindingEditorStartDelay.value, 0, 1, active.fireStartDelay);
+  active.fireEndDelay = clampNumber(el.bindingEditorEndDelay.value, 0, 1, active.fireEndDelay);
+  active.repeatRate = clampNumber(el.bindingEditorRepeatRate.value, 0, 1, active.repeatRate);
+  active.haptics = el.bindingEditorHaptics.value;
+  active.notes = el.bindingEditorNotes.value.trim();
+  active.actions = normalizeActivatorActions(active.actions);
+  active.binding = active.actions[0]?.output ?? active.binding;
+  renderBindingEditor();
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
 function formatBindingSummary(controlId) {
-  const entries = state.bindings[controlId] ?? [];
+  const entries = getBindingSummaryEntries(controlId);
   return entries.length ? entries.join("\n") : "Unmapped";
 }
 
@@ -499,7 +1197,7 @@ function setLayoutStatus(message, isError = false) {
 function applyDebugBindings() {
   controls.forEach((control, index) => {
     const key = DEBUG_KEY_SEQUENCE[index] ?? `F${13 + (index - DEBUG_KEY_SEQUENCE.length)}`;
-    state.bindings[control.id] = [`Keyboard: ${key}`];
+    state.bindings[control.id] = [createDefaultActivator(`Keyboard: ${key}`, index)];
   });
   renderBindings();
   updateSelectionInfo();
@@ -512,7 +1210,7 @@ function buildLayoutPayload() {
     version: 1,
     name: "Steam Deck Layout Studio export",
     savedAt: new Date().toISOString(),
-    bindings: state.bindings,
+    bindings: Object.fromEntries(controls.map((control) => [control.id, getControlActivators(control.id)])),
     loadedLayoutMeta: state.loadedLayoutMeta,
     controlPositions: Object.fromEntries(controls.map((control) => [control.id, control.pos])),
     controlRotations: Object.fromEntries(controls.map((control) => [control.id, control.rotation])),
@@ -816,7 +1514,7 @@ function renderBindingOverlays() {
 
   const visibleControls = controls
     .map((control) => {
-      const summary = state.bindings[control.id] ?? [];
+      const summary = getBindingSummaryEntries(control.id);
       const projected = projectControlPosition(control);
       const normalDir = projectControlNormalDirection(control, projected);
       const shortSummary = summary.length
@@ -867,7 +1565,7 @@ function renderBindingOverlays() {
 }
 
 function summarizeOverlayBinding(controlId) {
-  const entries = state.bindings[controlId] ?? [];
+  const entries = getBindingSummaryEntries(controlId);
   if (!entries.length) return "Unmapped";
   if (entries.length <= 2) return entries.join(" + ");
   return `${entries.slice(0, 2).join(" + ")} +${entries.length - 2}`;
