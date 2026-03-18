@@ -70,6 +70,7 @@ const ACTIVATOR_TYPES = [
   { value: "release_press", label: "Release Press" },
   { value: "chorded_press", label: "Chorded Press" }
 ];
+const MODIFIER_TOKENS = ["Ctrl", "Shift", "Alt", "Meta"];
 
 const el = {
   gameSearchInput: document.getElementById("gameSearchInput"),
@@ -125,16 +126,13 @@ const el = {
   bindingEditorModeMouseBtn: document.getElementById("bindingEditorModeMouseBtn"),
   bindingEditorKeysPanel: document.getElementById("bindingEditorKeysPanel"),
   bindingEditorMousePanel: document.getElementById("bindingEditorMousePanel"),
+  bindingEditorPressedMods: document.getElementById("bindingEditorPressedMods"),
   bindingEditorClearInputBtn: document.getElementById("bindingEditorClearInputBtn"),
   mouseLeftBtn: document.getElementById("mouseLeftBtn"),
   mouseRightBtn: document.getElementById("mouseRightBtn"),
   mouseMiddleBtn: document.getElementById("mouseMiddleBtn"),
   mouseWheelUpBtn: document.getElementById("mouseWheelUpBtn"),
   mouseWheelDownBtn: document.getElementById("mouseWheelDownBtn"),
-  modifierCtrlBtn: document.getElementById("modifierCtrlBtn"),
-  modifierShiftBtn: document.getElementById("modifierShiftBtn"),
-  modifierAltBtn: document.getElementById("modifierAltBtn"),
-  modifierMetaBtn: document.getElementById("modifierMetaBtn"),
   bindingEditorToggleAdvancedBtn: document.getElementById("bindingEditorToggleAdvancedBtn"),
   bindingEditorAdvancedColumn: document.getElementById("bindingEditorAdvancedColumn"),
   bindingEditorAdvancedBody: document.getElementById("bindingEditorAdvancedBody"),
@@ -534,10 +532,6 @@ function initBindingEditor() {
     state.bindingEditorAdvancedOpen = !state.bindingEditorAdvancedOpen;
     syncAdvancedVisibility();
   });
-  el.modifierCtrlBtn.addEventListener("click", () => toggleStepModifier("Ctrl"));
-  el.modifierShiftBtn.addEventListener("click", () => toggleStepModifier("Shift"));
-  el.modifierAltBtn.addEventListener("click", () => toggleStepModifier("Alt"));
-  el.modifierMetaBtn.addEventListener("click", () => toggleStepModifier("Meta"));
 
   const inputs = [
     el.bindingEditorType,
@@ -608,11 +602,6 @@ function applyMouseToken(token) {
 }
 
 function handleStepInputKeydown(event) {
-  if (event.key === "Backspace" || event.key === "Delete") {
-    event.preventDefault();
-    clearSelectedInput();
-    return;
-  }
   if (event.key === "Tab") {
     event.preventDefault();
   }
@@ -663,16 +652,14 @@ function syncInputModeTabs() {
   el.bindingEditorModeMouseBtn.classList.toggle("active", isMouse);
   el.bindingEditorKeysPanel.classList.toggle("hidden", isMouse);
   el.bindingEditorMousePanel.classList.toggle("hidden", !isMouse);
+  focusKeyInputIfVisible();
 }
 
-function toggleStepModifier(modifier) {
-  const index = state.activeStepModifiers.indexOf(modifier);
-  if (index >= 0) {
-    state.activeStepModifiers.splice(index, 1);
-  } else {
-    state.activeStepModifiers.push(modifier);
-  }
-  syncModifierButtons();
+function focusKeyInputIfVisible() {
+  if (!state.bindingEditorOpen) return;
+  const keysVisible = !el.bindingEditorKeysPanel.classList.contains("hidden");
+  if (!keysVisible) return;
+  requestAnimationFrame(() => el.bindingEditorStepInput.focus());
 }
 
 function clearStepModifiers() {
@@ -682,11 +669,14 @@ function clearStepModifiers() {
 }
 
 function syncModifierButtons() {
-  const selected = new Set(state.activeStepModifiers);
-  el.modifierCtrlBtn.classList.toggle("active", selected.has("Ctrl"));
-  el.modifierShiftBtn.classList.toggle("active", selected.has("Shift"));
-  el.modifierAltBtn.classList.toggle("active", selected.has("Alt"));
-  el.modifierMetaBtn.classList.toggle("active", selected.has("Meta"));
+  el.bindingEditorPressedMods.innerHTML = "";
+  state.activeStepModifiers.forEach((modifier) => {
+    const chip = document.createElement("span");
+    chip.className = "pressed-mod-chip";
+    chip.textContent = modifier;
+    el.bindingEditorPressedMods.appendChild(chip);
+  });
+  el.bindingEditorPressedMods.classList.toggle("active", state.activeStepModifiers.length > 0);
 }
 
 function syncAdvancedVisibility() {
@@ -714,6 +704,7 @@ function showBindingEditor() {
   }
   state.selectedActivatorIndex = clamp(Math.floor(state.selectedActivatorIndex), 0, activators.length - 1);
   renderBindingEditor();
+  focusKeyInputIfVisible();
 }
 
 function hideBindingEditor() {
@@ -773,6 +764,7 @@ function renderBindingEditor() {
     syncModifierButtons();
   }
   renderActionStepList(active.actions);
+  focusKeyInputIfVisible();
 }
 
 function renderActionStepList(actions) {
@@ -781,9 +773,14 @@ function renderActionStepList(actions) {
   actions.forEach((step, index) => {
     const item = document.createElement("li");
     item.className = "editor-step-item";
-    const stepLabel = step.output || "Unmapped";
+    const split = splitOutputModifiers(step.output);
+    const stepLabel = split.payload || "Unmapped";
+    const stepLabelClass = split.payload ? "step-label" : "step-label unmapped";
     item.innerHTML = `
-      <span class="step-label">${escapeHtml(stepLabel)}</span>
+      <div class="step-modifiers">
+        ${getStepModifierButtonsMarkup(index, split.modifiers)}
+      </div>
+      <span class="${stepLabelClass}">${escapeHtml(stepLabel)}</span>
       <label class="step-delay">
         <span class="step-delay-label">Delay</span>
         <input class="step-delay-input" type="number" min="0" max="2000" step="10" value="${step.delayMs}" data-index="${index}" />
@@ -801,6 +798,10 @@ function renderActionStepList(actions) {
     button.addEventListener("click", () => {
       const action = button.dataset.action;
       const index = Number.parseInt(button.dataset.index ?? "-1", 10);
+      if (action === "mod") {
+        toggleModifierOnActionStep(index, button.dataset.modifier);
+        return;
+      }
       mutateActionStep(action, index);
     });
   });
@@ -874,6 +875,59 @@ function composeCurrentInput(rawInput) {
   if (!rawInput) return "";
   if (rawInput.includes("+")) return rawInput;
   return buildTokenWithModifiers(rawInput);
+}
+
+function splitOutputModifiers(output) {
+  const parts = typeof output === "string" ? output.split("+").map((part) => part.trim()).filter(Boolean) : [];
+  const modifiers = [];
+  const payload = [];
+  parts.forEach((part) => {
+    if (MODIFIER_TOKENS.includes(part)) {
+      if (!modifiers.includes(part)) modifiers.push(part);
+    } else {
+      payload.push(part);
+    }
+  });
+  return { modifiers, payload: payload.join("+") };
+}
+
+function composeOutputWithModifiers(modifiers, payload) {
+  const cleanPayload = typeof payload === "string" ? payload.trim() : "";
+  if (!cleanPayload) return "";
+  const orderedModifiers = MODIFIER_TOKENS.filter((token) => modifiers.includes(token));
+  return orderedModifiers.length ? `${orderedModifiers.join("+")}+${cleanPayload}` : cleanPayload;
+}
+
+function getStepModifierButtonsMarkup(index, selectedModifiers) {
+  const selected = new Set(selectedModifiers);
+  return MODIFIER_TOKENS
+    .map((modifier) => {
+      const activeClass = selected.has(modifier) ? " active" : "";
+      return `<button type="button" class="step-mod-btn${activeClass}" data-action="mod" data-index="${index}" data-modifier="${modifier}">${modifier}</button>`;
+    })
+    .join("");
+}
+
+function toggleModifierOnActionStep(index, modifier) {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  if (!MODIFIER_TOKENS.includes(modifier)) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active || index < 0 || index >= active.actions.length) return;
+  const step = active.actions[index];
+  if (!step) return;
+  const split = splitOutputModifiers(step.output);
+  if (!split.payload) return;
+  const modifiers = [...split.modifiers];
+  const modIndex = modifiers.indexOf(modifier);
+  if (modIndex >= 0) modifiers.splice(modIndex, 1);
+  else modifiers.push(modifier);
+  step.output = composeOutputWithModifiers(modifiers, split.payload);
+  active.binding = active.actions[0]?.output ?? "";
+  renderActionStepList(active.actions);
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
 }
 
 function populateInputFromOutput(output) {

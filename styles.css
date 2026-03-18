@@ -372,13 +372,35 @@ button.primary {
 
 .input-composer {
   display: grid;
-  grid-template-columns: auto auto auto auto 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 0.3rem;
   align-items: center;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   background: #0d1732;
   padding: 0.34rem;
+}
+
+.pressed-mods {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0 0.12rem;
+}
+
+.pressed-mods.active {
+  margin-right: 0.12rem;
+}
+
+.pressed-mod-chip {
+  border: 1px solid rgba(98, 216, 255, 0.65);
+  border-radius: 6px;
+  padding: 0.18rem 0.34rem;
+  font-size: 0.68rem;
+  color: #e8f7ff;
+  background: rgba(28, 72, 130, 0.38);
+  line-height: 1;
 }
 
 .input-composer input {
@@ -393,11 +415,6 @@ button.primary {
 .input-composer input:focus {
   outline: none;
   border-color: transparent;
-}
-
-.input-composer .mod-btn {
-  padding: 0.34rem 0.5rem;
-  font-size: 0.74rem;
 }
 
 .input-composer #bindingEditorClearInputBtn {
@@ -555,7 +572,7 @@ button.primary {
   background: #0f1a31;
   padding: 0.38rem 0.5rem;
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -563,9 +580,16 @@ button.primary {
 .step-label {
   font-size: 0.79rem;
   color: var(--text);
+  text-align: left;
+  justify-self: start;
+  width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.step-label.unmapped {
+  color: var(--muted);
 }
 
 .step-delay {
@@ -575,6 +599,25 @@ button.primary {
   display: inline-flex;
   align-items: center;
   gap: 0.24rem;
+}
+
+.step-modifiers {
+  display: inline-flex;
+  gap: 0.22rem;
+}
+
+.step-mod-btn {
+  padding: 0.18rem 0.36rem;
+  border-radius: 6px;
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.step-mod-btn.active {
+  border-color: rgba(98, 216, 255, 0.8);
+  color: #e8f7ff;
+  background: rgba(28, 72, 130, 0.42);
+  box-shadow: 0 0 0 1px rgba(98, 216, 255, 0.24);
 }
 
 .step-delay-label {
