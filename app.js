@@ -64,7 +64,7 @@ const TARGET_MODEL_WIDTH = 4.35;
 const FALLBACK_BODY_SIZE = [4.3, 1.8, 1.25];
 const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M"];
 const ACTIVATOR_TYPES = [
-  { value: "regular_press", label: "Regular Press" },
+  { value: "regular_press", label: "Full Press" },
   { value: "double_press", label: "Double Press" },
   { value: "long_press", label: "Long Press" },
   { value: "start_press", label: "Start Press" },
@@ -387,9 +387,38 @@ function normalizeActivatorActions(actions) {
       const output = typeof step.output === "string" ? step.output.trim() : "";
       if (!output) return null;
       const delayMs = Math.round(clampNumber(step.delayMs, 0, 2000, 0));
-      return { output, delayMs };
+      const dsl = step.dsl && typeof step.dsl === "object" ? sanitizeBindingDsl(step.dsl) : null;
+      return dsl ? { output, delayMs, dsl } : { output, delayMs };
     })
     .filter(Boolean);
+}
+
+function sanitizeBindingDsl(value) {
+  const commandRaw = typeof value.commandRaw === "string" && value.commandRaw.trim() ? value.commandRaw.trim() : "";
+  const command = typeof value.command === "string" && value.command.trim() ? value.command.trim().toLowerCase() : commandRaw.toLowerCase();
+  const argsRaw = typeof value.argsRaw === "string" ? value.argsRaw.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  const icon = typeof value.icon === "string" ? value.icon.trim() : "";
+  const colors = typeof value.colors === "string" ? value.colors.trim() : "";
+  const extra = Array.isArray(value.extra)
+    ? value.extra.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean)
+    : [];
+  const raw = typeof value.raw === "string" ? value.raw.trim() : "";
+  const argTokens = Array.isArray(value.argTokens)
+    ? value.argTokens.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean)
+    : (argsRaw ? argsRaw.split(/\s+/).filter(Boolean) : []);
+  if (!command) return null;
+  return {
+    command,
+    commandRaw: commandRaw || command,
+    argsRaw,
+    argTokens,
+    label,
+    icon,
+    colors,
+    extra,
+    raw
+  };
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -422,7 +451,7 @@ function getBindingSummaryEntries(controlId) {
 }
 
 function formatActivatorSummary(activator) {
-  const typeLabel = ACTIVATOR_TYPES.find((item) => item.value === activator.type)?.label ?? "Regular Press";
+  const typeLabel = ACTIVATOR_TYPES.find((item) => item.value === activator.type)?.label ?? "Full Press";
   const parts = [typeLabel];
   if (activator.actions.length) {
     const actionSummary = activator.actions
@@ -607,10 +636,11 @@ function applyMouseToken(token) {
     active.actions = [{ output: composed, delayMs: 0 }];
     state.draftStepIndex = 0;
   } else if (state.draftStepIndex == null || state.draftStepIndex < 0 || state.draftStepIndex >= active.actions.length) {
-    active.actions.push({ output: "", delayMs: 0 });
+    active.actions.push({ output: "", delayMs: 0, dsl: null });
     state.draftStepIndex = active.actions.length - 1;
   }
   active.actions[state.draftStepIndex].output = composed;
+  active.actions[state.draftStepIndex].dsl = null;
   active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
@@ -741,7 +771,7 @@ function renderBindingEditor() {
   activators.forEach((activator, index) => {
     const item = document.createElement("li");
     item.className = `editor-list-item${index === state.selectedActivatorIndex ? " active" : ""}`;
-    const title = ACTIVATOR_TYPES.find((entry) => entry.value === activator.type)?.label ?? "Regular Press";
+    const title = ACTIVATOR_TYPES.find((entry) => entry.value === activator.type)?.label ?? "Full Press";
     const binding = activator.actions.length ? activator.actions.map((step) => step?.output || "Unmapped").join(" ⟶ ") : (activator.binding || "Unmapped");
     item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(binding)}</span>`;
     item.addEventListener("click", () => {
@@ -841,7 +871,7 @@ function addActionStepToSelectedActivator() {
     requestAnimationFrame(() => el.bindingEditorStepInput.focus());
     return;
   }
-  active.actions.push({ output: "", delayMs: 0 });
+  active.actions.push({ output: "", delayMs: 0, dsl: null });
   state.draftStepIndex = active.actions.length - 1;
   active.binding = active.actions[0]?.output ?? "";
   resetDraftStepInput();
@@ -941,6 +971,7 @@ function toggleModifierOnActionStep(index, modifier) {
   if (modIndex >= 0) modifiers.splice(modIndex, 1);
   else modifiers.push(modifier);
   step.output = composeOutputWithModifiers(modifiers, split.payload);
+  step.dsl = null;
   active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
@@ -1020,6 +1051,7 @@ function syncCurrentInputFromEditor() {
     state.draftStepIndex = active.actions.length - 1;
   }
   active.actions[state.draftStepIndex].output = composed;
+  active.actions[state.draftStepIndex].dsl = null;
   active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
@@ -1242,6 +1274,7 @@ function renderCommunityLayouts() {
   state.communityLayouts.forEach((layout) => {
     const fragment = el.layoutResultTemplate.content.cloneNode(true);
     const button = fragment.querySelector(".layout-result");
+    const downloadButton = fragment.querySelector(".layout-download-btn");
     fragment.querySelector(".result-title").textContent = layout.title || `Layout ${layout.file_id}`;
     fragment.querySelector(".result-meta").textContent = [
       layout.controller_type_nice ?? "Unknown controller",
@@ -1254,6 +1287,11 @@ function renderCommunityLayouts() {
     button.addEventListener("click", () => {
       state.selectedLayoutDetail = layout;
       renderCommunityLayouts();
+    });
+    downloadButton.disabled = !layout.file_url;
+    downloadButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void downloadCommunityLayout(layout);
     });
     el.layoutResultsList.appendChild(fragment);
   });
@@ -1303,6 +1341,10 @@ async function loadCommunityLayout(layoutMeta) {
     const payload = await response.json();
     const parsed = parseVdf(payload.vdf);
     const bindings = extractBindingsFromLayout(parsed);
+    const mappedControlCount = Object.values(bindings).filter((entries) => Array.isArray(entries) && entries.length > 0).length;
+    const mappingSummary = mappedControlCount
+      ? `${mappedControlCount}/${controls.length} controls mapped.`
+      : "No recognizable control mappings found in this file.";
 
     state.loadedLayoutMeta = target;
     state.bindings = Object.fromEntries(controls.map((control) => [control.id, bindings[control.id] ?? []]));
@@ -1312,12 +1354,53 @@ async function loadCommunityLayout(layoutMeta) {
     renderBindingOverlays();
     state.selectedLayoutDetail = target;
     renderLayoutDetail();
-    setLayoutStatus(`Loaded ${target.title}. ${summarizeLoadedLayout(target)}`);
+    setLayoutStatus(`Loaded ${target.title}. ${summarizeLoadedLayout(target)}${mappingSummary ? ` • ${mappingSummary}` : ""}`, mappedControlCount === 0);
     updateCommunitySummary();
     hideCommunityDialog();
   } catch {
     setLayoutStatus(`Failed to parse ${target?.title ?? "selected layout"}.`, true);
   }
+}
+
+async function downloadCommunityLayout(layoutMeta) {
+  const target = layoutMeta ?? state.selectedLayoutDetail;
+  if (!target?.file_url) {
+    setLayoutStatus("That layout does not expose a downloadable VDF.", true);
+    return;
+  }
+
+  setLayoutStatus(`Downloading ${target.title || `Layout ${target.file_id}`}...`);
+  try {
+    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
+    if (!response.ok) throw new Error("Layout fetch failed");
+    const payload = await response.json();
+    const filename = getCommunityLayoutFileName(target);
+    const blob = new Blob([payload.vdf ?? ""], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setLayoutStatus(`Downloaded ${filename}.`, false);
+  } catch {
+    setLayoutStatus(`Failed to download ${target?.title ?? "selected layout"}.`, true);
+  }
+}
+
+function getCommunityLayoutFileName(layoutMeta) {
+  const appSegment = state.selectedGame?.id ? `app${state.selectedGame.id}` : "app";
+  const fallback = layoutMeta?.file_id != null ? `layout-${layoutMeta.file_id}` : "layout";
+  const title = layoutMeta?.title || layoutMeta?.file_name || fallback;
+  const titleSegment = sanitizeFilenameSegment(title) || fallback;
+  return `steamdeck-${appSegment}-${titleSegment}.vdf`;
+}
+
+function sanitizeFilenameSegment(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 function summarizeLoadedLayout(layoutMeta) {
@@ -1350,6 +1433,7 @@ function buildLayoutPayload() {
     name: "Steam Deck Layout Studio export",
     savedAt: new Date().toISOString(),
     bindings: Object.fromEntries(controls.map((control) => [control.id, getControlActivators(control.id)])),
+    vdfBindings: buildVdfBindingsPayload(),
     loadedLayoutMeta: state.loadedLayoutMeta,
     controlPositions: Object.fromEntries(controls.map((control) => [control.id, control.pos])),
     controlRotations: Object.fromEntries(controls.map((control) => [control.id, control.rotation])),
@@ -2072,7 +2156,7 @@ function extractBindingsFromLayout(parsedLayout) {
   }
 
   for (const controlId of Object.keys(bindings)) {
-    bindings[controlId] = dedupeStrings(bindings[controlId]);
+    bindings[controlId] = dedupeActivators(bindings[controlId]);
   }
   return bindings;
 }
@@ -2144,68 +2228,425 @@ function applyGroupBindings(bindings, source, group) {
 
 function bindInput(bindings, controlId, input) {
   if (!input || !bindings[controlId]) return;
-  const summaries = summarizeInputBindings(input);
-  bindings[controlId].push(...summaries);
+  const activators = mapInputToActivators(input);
+  bindings[controlId].push(...activators);
 }
 
 function bindCompoundInput(bindings, controlId, inputs, labels) {
   if (!bindings[controlId]) return;
   for (const [inputName, label] of Object.entries(labels)) {
-    const summaries = summarizeInputBindings(inputs[inputName]);
-    if (!summaries.length) continue;
-    bindings[controlId].push(`${label}: ${summaries.join(", ")}`);
+    const activators = mapInputToActivators(inputs[inputName], { displayPrefix: label });
+    if (!activators.length) continue;
+    bindings[controlId].push(...activators);
   }
 }
 
-function summarizeInputBindings(input) {
+function mapInputToActivators(input, options = {}) {
   if (!input || typeof input !== "object") return [];
-  const collected = [];
-  collectBindingStrings(input, collected);
-  return dedupeStrings(collected.map(formatBindingText).filter(Boolean));
+  const { displayPrefix = "" } = options;
+  const activatorEntries = [];
+  if (input.activators && typeof input.activators === "object") {
+    activatorEntries.push(...Object.entries(input.activators));
+  } else {
+    activatorEntries.push(["Full_Press", input]);
+  }
+
+  const mapped = [];
+  activatorEntries.forEach(([vdfActivatorKey, activatorNode], index) => {
+    const bindingStrings = extractBindingStringsFromActivatorNode(activatorNode);
+    if (!bindingStrings.length) return;
+    const internalType = mapVdfActivatorKeyToInternalType(vdfActivatorKey);
+    const actions = bindingStrings
+      .map((binding) => {
+        if (typeof binding !== "string" || !binding.trim()) return null;
+        const dsl = parseBindingDSL(binding);
+        if (!dsl.command) return null;
+        const outputCore = bindingDslToModelOutput(dsl);
+        const output = displayPrefix ? `${displayPrefix}: ${outputCore}` : outputCore;
+        return { output, delayMs: 0, dsl };
+      })
+      .filter(Boolean);
+    if (!actions.length) return;
+    const next = createDefaultActivator("", index);
+    next.type = internalType;
+    next.actions = actions;
+    next.binding = actions[0]?.output ?? "";
+    mapped.push(sanitizeActivator(next, index));
+  });
+
+  return mapped;
 }
 
-function collectBindingStrings(value, output) {
-  if (!value) return;
-  if (typeof value === "string") {
-    output.push(value);
-    return;
+function extractBindingStringsFromActivatorNode(node) {
+  if (!node || typeof node !== "object") return [];
+  const values = arrayify(node.bindings?.binding);
+  return values.filter((entry) => typeof entry === "string" && entry.trim());
+}
+
+function mapVdfActivatorKeyToInternalType(key) {
+  const normalized = String(key ?? "").trim();
+  switch (normalized) {
+    case "Double_Press":
+      return "double_press";
+    case "Long_Press":
+      return "long_press";
+    case "Start_Press":
+      return "start_press";
+    case "Release_Press":
+      return "release_press";
+    case "Chorded_Press":
+      return "chorded_press";
+    case "Soft_Pull":
+    case "edge":
+    case "Full_Press":
+    default:
+      return "regular_press";
   }
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectBindingStrings(item, output));
-    return;
-  }
-  for (const [key, nested] of Object.entries(value)) {
-    if (key.startsWith("disabled_")) continue;
-    if (key === "binding" && typeof nested === "string") {
-      output.push(nested);
-    } else {
-      collectBindingStrings(nested, output);
-    }
+}
+
+function mapInternalTypeToVdfActivatorKey(type) {
+  switch (type) {
+    case "double_press":
+      return "Double_Press";
+    case "long_press":
+      return "Long_Press";
+    case "start_press":
+      return "Start_Press";
+    case "release_press":
+      return "Release_Press";
+    case "chorded_press":
+      return "Chorded_Press";
+    case "regular_press":
+    default:
+      return "Full_Press";
   }
 }
 
 function formatBindingText(binding) {
-  const [commandPart, labelPart] = binding.split(",").map((part) => part.trim());
-  if (labelPart) return labelPart;
+  const parsed = parseBindingDSL(binding);
+  if (!parsed.command) return "";
 
-  const [command, ...rest] = commandPart.split(/\s+/);
-  const arg = rest.join(" ").trim();
-  if (!command) return "";
+  const base = bindingDslToModelOutput(parsed);
+  if (!base) return "";
+  const meta = formatBindingMeta(parsed);
+  return meta ? `${base} - ${meta}` : base;
+}
 
+function parseBindingDSL(binding) {
+  const parts = splitBindingFields(binding).map((part) => part.trim());
+  const [head = "", ...meta] = parts;
+  const [command = "", ...argTokens] = head.split(/\s+/).filter(Boolean);
+  const argsRaw = argTokens.join(" ").trim();
+  return {
+    raw: binding,
+    command: command.toLowerCase(),
+    commandRaw: command,
+    argsRaw,
+    argTokens,
+    label: meta[0] ?? "",
+    icon: meta[1] ?? "",
+    colors: meta[2] ?? "",
+    extra: meta.slice(3)
+  };
+}
+
+function splitBindingFields(text) {
+  const parts = [];
+  let current = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "," && text[index - 1] !== "\\") {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts;
+}
+
+function bindingDslToModelOutput(parsed) {
+  const { command, argsRaw, argTokens } = parsed;
   switch (command) {
     case "key_press":
-      return `Key ${formatToken(arg)}`;
+      return formatKeyShortcut(argsRaw);
     case "mouse_button":
-      return `Mouse ${formatToken(arg)}`;
+      return `${formatToken(argsRaw)} Mouse`;
+    case "mouse_wheel":
+      return formatToken(argsRaw).replace("Scroll ", "Wheel ");
     case "xinput_button":
-      return `Pad ${formatToken(arg)}`;
+      return `Pad ${formatToken(argsRaw)}`;
     case "mode_shift":
-      return `Mode Shift ${formatToken(arg)}`;
+      if (argTokens.length >= 2) return `Mode Shift ${formatToken(argTokens[0])} -> Group ${argTokens[1]}`;
+      return `Mode Shift ${formatToken(argsRaw)}`;
     case "controller_action":
-      return formatToken(arg);
+      return formatControllerAction(argsRaw, argTokens);
     default:
-      return `${formatToken(command)}${arg ? ` ${formatToken(arg)}` : ""}`.trim();
+      return `${formatToken(parsed.commandRaw || command)}${argsRaw ? ` ${formatToken(argsRaw)}` : ""}`.trim();
   }
+}
+
+function formatControllerAction(argsRaw, argTokens) {
+  if (!argsRaw) return "Controller Action";
+  const normalized = argsRaw.toLowerCase();
+  if (normalized === "empty_sub_command" || normalized === "empty_binding") return "No Action";
+  if (normalized.startsWith("hold_layer")) {
+    const layer = argTokens[1] ? ` ${argTokens[1]}` : "";
+    return `Hold Layer${layer}`;
+  }
+  if (normalized.startsWith("switch_layer")) {
+    const layer = argTokens[1] ? ` ${argTokens[1]}` : "";
+    return `Switch Layer${layer}`;
+  }
+  return formatToken(argsRaw);
+}
+
+function modelOutputToBindingDsl(output) {
+  const text = String(output ?? "").trim();
+  if (!text) {
+    return {
+      command: "controller_action",
+      commandRaw: "controller_action",
+      argsRaw: "empty_sub_command",
+      argTokens: ["empty_sub_command"],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+
+  const stripped = stripDisplayPrefix(text);
+  if (stripped === "No Action") {
+    return {
+      command: "controller_action",
+      commandRaw: "controller_action",
+      argsRaw: "empty_sub_command",
+      argTokens: ["empty_sub_command"],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped === "Wheel Up") {
+    return {
+      command: "mouse_wheel",
+      commandRaw: "mouse_wheel",
+      argsRaw: "SCROLL_UP",
+      argTokens: ["SCROLL_UP"],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped === "Wheel Down") {
+    return {
+      command: "mouse_wheel",
+      commandRaw: "mouse_wheel",
+      argsRaw: "SCROLL_DOWN",
+      argTokens: ["SCROLL_DOWN"],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped === "Left Mouse" || stripped === "Right Mouse" || stripped === "Middle Mouse") {
+    const button = stripped.replace(" Mouse", "").toUpperCase();
+    return {
+      command: "mouse_button",
+      commandRaw: "mouse_button",
+      argsRaw: button,
+      argTokens: [button],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped.startsWith("Pad ")) {
+    const token = stripped.slice(4).trim().replaceAll(" ", "_");
+    return {
+      command: "xinput_button",
+      commandRaw: "xinput_button",
+      argsRaw: token,
+      argTokens: [token],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped.startsWith("Mode Shift ")) {
+    const match = stripped.match(/^Mode Shift\s+(.+?)\s*->\s*Group\s+(\d+)$/i);
+    const source = match?.[1]?.trim().replaceAll(" ", "_").toLowerCase() || stripped.slice("Mode Shift ".length).trim().replaceAll(" ", "_").toLowerCase();
+    const groupId = match?.[2] ?? "";
+    const argsRaw = groupId ? `${source} ${groupId}` : source;
+    return {
+      command: "mode_shift",
+      commandRaw: "mode_shift",
+      argsRaw,
+      argTokens: argsRaw ? argsRaw.split(/\s+/).filter(Boolean) : [],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+
+  const keyArgs = stripped
+    .split("+")
+    .map((token) => mapModelKeyTokenToVdfToken(token.trim()))
+    .filter(Boolean)
+    .join("+");
+  return {
+    command: "key_press",
+    commandRaw: "key_press",
+    argsRaw: keyArgs || mapModelKeyTokenToVdfToken(stripped),
+    argTokens: (keyArgs || mapModelKeyTokenToVdfToken(stripped)).split(/\s+/).filter(Boolean),
+    label: "",
+    icon: "",
+    colors: "",
+    extra: [],
+    raw: ""
+  };
+}
+
+function stripDisplayPrefix(output) {
+  const match = output.match(/^(Click|North|South|East|West|Touch|Pull|Soft|Full):\s+(.+)$/);
+  return match ? match[2] : output;
+}
+
+function mapModelKeyTokenToVdfToken(token) {
+  const normalized = token.toUpperCase().replaceAll(" ", "_");
+  const map = {
+    UP: "UP_ARROW",
+    DOWN: "DOWN_ARROW",
+    LEFT: "LEFT_ARROW",
+    RIGHT: "RIGHT_ARROW",
+    ESC: "ESCAPE",
+    CTRL: "LEFT_CONTROL",
+    CONTROL: "LEFT_CONTROL",
+    ALT: "LEFT_ALT",
+    SHIFT: "LEFT_SHIFT",
+    PAGE_DOWN: "PAGE_DOWN",
+    PAGE_UP: "PAGE_UP",
+    NUM0: "KEYPAD_0",
+    NUM1: "KEYPAD_1",
+    NUM2: "KEYPAD_2",
+    NUM3: "KEYPAD_3",
+    NUM4: "KEYPAD_4",
+    NUM5: "KEYPAD_5",
+    NUM6: "KEYPAD_6",
+    NUM7: "KEYPAD_7",
+    NUM8: "KEYPAD_8",
+    NUM9: "KEYPAD_9"
+  };
+  return map[normalized] ?? normalized;
+}
+
+function serializeBindingDsl(parsed) {
+  const normalized = sanitizeBindingDsl(parsed);
+  if (!normalized) return "";
+  if (normalized.raw && normalized.raw.includes(",") && normalized.command === normalized.commandRaw.toLowerCase()) {
+    return normalized.raw;
+  }
+  const head = [normalized.commandRaw || normalized.command, normalized.argsRaw].filter(Boolean).join(" ").trim();
+  const fields = [normalized.label || "", normalized.icon || "", normalized.colors || "", ...normalized.extra];
+  return `${head}, ${fields.join(", ")}`;
+}
+
+function buildVdfBindingsPayload() {
+  return Object.fromEntries(
+    controls.map((control) => [control.id, activatorsToVdfBindings(getControlActivators(control.id))])
+  );
+}
+
+function activatorsToVdfBindings(activators) {
+  return activators.map((activator) => ({
+    activator: mapInternalTypeToVdfActivatorKey(activator.type),
+    bindings: activator.actions
+      .map((step) => {
+        const dsl = step.dsl && typeof step.dsl === "object" ? step.dsl : modelOutputToBindingDsl(step.output);
+        return serializeBindingDsl(dsl);
+      })
+      .filter(Boolean)
+  }));
+}
+
+function dedupeActivators(activators) {
+  const seen = new Set();
+  return activators.filter((activator) => {
+    const signature = JSON.stringify({
+      type: activator.type,
+      actions: activator.actions.map((step) => step.dsl?.raw || step.output)
+    });
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+function formatBindingMeta(parsed) {
+  const parts = [];
+  if (parsed.label) {
+    if (parsed.label.startsWith("#")) {
+      parts.push(`Label ${parsed.label} (localized)`);
+    } else {
+      parts.push(parsed.label);
+    }
+  }
+  if (parsed.icon) parts.push(`Icon ${parsed.icon}`);
+  if (parsed.colors) parts.push(`Colors ${parsed.colors}`);
+  parsed.extra.filter(Boolean).forEach((extra) => parts.push(extra));
+  return parts.join(" | ");
+}
+
+function formatKeyShortcut(arg) {
+  if (!arg) return "";
+  return arg
+    .split("+")
+    .map((token) => formatToken(mapVdfKeyTokenToModelToken(token.trim())))
+    .filter(Boolean)
+    .join("+");
+}
+
+function mapVdfKeyTokenToModelToken(token) {
+  const normalized = token.toUpperCase();
+  const map = {
+    UP_ARROW: "Up",
+    DOWN_ARROW: "Down",
+    LEFT_ARROW: "Left",
+    RIGHT_ARROW: "Right",
+    LEFT_CONTROL: "Ctrl",
+    RIGHT_CONTROL: "Ctrl",
+    LEFT_ALT: "Alt",
+    RIGHT_ALT: "Alt",
+    LEFT_SHIFT: "Shift",
+    RIGHT_SHIFT: "Shift",
+    ESCAPE: "Esc",
+    KEYPAD_0: "Num0",
+    KEYPAD_1: "Num1",
+    KEYPAD_2: "Num2",
+    KEYPAD_3: "Num3",
+    KEYPAD_4: "Num4",
+    KEYPAD_5: "Num5",
+    KEYPAD_6: "Num6",
+    KEYPAD_7: "Num7",
+    KEYPAD_8: "Num8",
+    KEYPAD_9: "Num9"
+  };
+  return map[normalized] ?? token;
 }
 
 function formatToken(value) {

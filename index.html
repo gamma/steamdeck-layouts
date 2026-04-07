@@ -193,22 +193,24 @@
               </div>
               <div class="editor-note">Select one or more Steam Deck controls that must be held.</div>
             </label>
-            <label class="editor-check">
-              <input id="bindingEditorToggle" type="checkbox" />
-              <span>Toggle</span>
-            </label>
-            <label class="editor-check">
-              <input id="bindingEditorInterruptable" type="checkbox" checked />
-              <span>Interruptable</span>
-            </label>
-            <label class="editor-check">
-              <input id="bindingEditorTurbo" type="checkbox" />
-              <span>Hold to Repeat (Turbo)</span>
-            </label>
-            <label class="editor-check">
-              <input id="bindingEditorCycle" type="checkbox" />
-              <span>Cycle Binding</span>
-            </label>
+            <div class="editor-options-group" role="group" aria-label="Activator options">
+              <label class="editor-option">
+                <span>Toggle</span>
+                <input id="bindingEditorToggle" type="checkbox" />
+              </label>
+              <label class="editor-option">
+                <span>Interruptable</span>
+                <input id="bindingEditorInterruptable" type="checkbox" checked />
+              </label>
+              <label class="editor-option">
+                <span>Hold to Repeat (Turbo)</span>
+                <input id="bindingEditorTurbo" type="checkbox" />
+              </label>
+              <label class="editor-option">
+                <span>Cycle Binding</span>
+                <input id="bindingEditorCycle" type="checkbox" />
+              </label>
+            </div>
           </section>
           <section id="bindingEditorAdvancedColumn" class="binding-editor-column hidden">
             <div class="binding-editor-toolbar">
@@ -278,12 +280,13 @@
     </template>
 
     <template id="layoutResultTemplate">
-      <li>
+      <li class="layout-result-row">
         <button type="button" class="result-card layout-result">
           <span class="result-title"></span>
           <span class="result-meta"></span>
           <span class="result-description"></span>
         </button>
+        <button type="button" class="layout-download-btn">Download VDF</button>
       </li>
     </template>
 
