@@ -2581,7 +2581,7 @@ function loadDeckModel(deckRoot) {
       geometry.translate(0, scaledSize.y * 0.18, 0);
 
       const material = new THREE.MeshStandardMaterial({
-        color: isLightTheme() ? 0x7f8ba3 : 0x2f3747,
+        color: 0xffffff,
         vertexColors: true,
         metalness: isLightTheme() ? 0.12 : 0.28,
         roughness: isLightTheme() ? 0.56 : 0.76
@@ -2676,21 +2676,21 @@ function addDecorativeElements(scene) {
 function getControlColor(kind) {
   switch (kind) {
     case "face":
-      return 0xb7c2d6;
+      return 0xff5b5b;
     case "stick":
-      return 0x3d4659;
+      return 0xd44747;
     case "pad":
-      return 0x212a3b;
+      return 0xc93a3a;
     case "utility":
-      return 0x8f9db6;
+      return 0xe15d5d;
     case "dpad":
-      return 0x909db5;
+      return 0xe84c4c;
     case "bumper":
     case "trigger":
     case "rear":
-      return 0x2b3446;
+      return 0xb83232;
     default:
-      return 0x62d8ff;
+      return 0xff6666;
   }
 }
 
@@ -2716,7 +2716,7 @@ function renderBindingOverlays() {
         : "";
       return { control, summary, projected, shortSummary, normalDir };
     })
-    .filter((entry) => entry.summary.length && entry.projected.visible);
+    .filter((entry) => entry.projected.visible);
 
   if (!visibleControls.length) {
     el.bindingTags.innerHTML = "";
@@ -2734,10 +2734,11 @@ function renderBindingOverlays() {
     const pointX = entry.projected.x * el.deckContainer.clientWidth;
     const pointY = entry.projected.y * el.deckContainer.clientHeight;
     const selected = state.selectedControlId === entry.control.id;
+    const unmapped = !entry.summary.length;
     if (selected) selectedEntry = entry;
     lineParts.push(
-      `<polyline class="binding-line${selected ? " selected" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
-      `<circle class="binding-bubble${selected ? " selected" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
+      `<polyline class="binding-line${selected ? " selected" : ""}${unmapped ? " unmapped" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
+      `<circle class="binding-bubble${selected ? " selected" : ""}${unmapped ? " unmapped" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
     );
   }
   el.bindingLines.innerHTML = lineParts.join("");
@@ -3918,12 +3919,13 @@ function recolorShellRegions() {
   const colorAttr = shellGeometry.getAttribute("color");
   const lightTheme = isLightTheme();
   const baseColor = new THREE.Color(lightTheme ? 0x7f8ba3 : 0x2f3747);
-  const paintedColor = new THREE.Color(lightTheme ? 0xd83f3f : 0xff4d4d);
-  const selectedColor = new THREE.Color(lightTheme ? 0xb82222 : state.paintMode ? 0xff9999 : 0xff7373);
+  const selectedColor = new THREE.Color(lightTheme ? 0xc02424 : state.paintMode ? 0xff9999 : 0xff7373);
   const previewColor = new THREE.Color(lightTheme ? 0xff7d4a : 0xffa366);
 
   for (let faceIndex = 0; faceIndex < shellFaceOwners.length; faceIndex += 1) {
     const owner = shellFaceOwners[faceIndex];
+    const ownerControl = owner ? getControlById(owner) : null;
+    const paintedColor = new THREE.Color(getControlColor(ownerControl?.kind));
     const color = shellPreviewFaces.has(faceIndex)
       ? previewColor
       : owner && owner === state.selectedControlId
