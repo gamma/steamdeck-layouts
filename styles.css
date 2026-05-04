@@ -947,7 +947,7 @@ button.primary {
   width: 72px;
   border-radius: 6px;
   border: 1px solid var(--panel-border);
-  background: #0d1732;
+  background: var(--field-bg);
   color: var(--text);
   padding: 0.2rem 0.34rem;
   font-size: 0.74rem;
@@ -1166,10 +1166,14 @@ button.primary {
   gap: 0.28rem;
   text-align: left;
   border: 1px solid var(--panel-border);
-  background: #182744;
+  background: var(--surface);
   padding: 0.7rem;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+html[data-theme="light"] .result-card {
+  background: rgba(245, 248, 252, 0.92);
 }
 
 .result-card:hover,
