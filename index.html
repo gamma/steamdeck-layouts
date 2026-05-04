@@ -17,17 +17,32 @@
         <button id="debugMapBtn">Map All (Debug)</button>
         <button id="loadLayoutBtn">Load JSON</button>
         <button id="saveLayoutBtn" class="primary">Save JSON</button>
+        <div class="theme-switcher" role="group" aria-label="Theme">
+          <button id="themeAutoBtn" type="button" class="theme-btn">Auto</button>
+          <button id="themeLightBtn" type="button" class="theme-btn">Light</button>
+          <button id="themeDarkBtn" type="button" class="theme-btn">Dark</button>
+        </div>
         <input id="fileInput" type="file" accept="application/json" hidden />
       </div>
     </header>
 
     <main class="workspace">
       <section class="panel left">
-        <h2>Community Layouts</h2>
-        <p class="muted">Click below to open the community layout browser.</p>
-        <button id="openCommunityBtn" class="primary" type="button">Browse Community Layouts</button>
-        <div id="currentCommunitySummary" class="selection">No layout loaded yet.</div>
-        <p class="muted">Use the deck view to drag &amp; drop `.json` files or use the Save/Load buttons in the header.</p>
+        <section class="community-panel">
+          <h2>Community Layouts</h2>
+          <p class="muted">Click below to open the community layout browser.</p>
+          <button id="openCommunityBtn" class="primary" type="button">Browse Community Layouts</button>
+          <div id="currentCommunitySummary" class="selection">No layout loaded yet.</div>
+          <p class="muted">Use the deck view to drag &amp; drop `.json` files or use the Save/Load buttons in the header.</p>
+        </section>
+        <section class="validation-panel" aria-labelledby="validationPanelTitle">
+          <div class="validation-header">
+            <h3 id="validationPanelTitle">Export Readiness</h3>
+            <span id="validationBadge" class="validation-badge">Checking…</span>
+          </div>
+          <p id="validationSummary" class="muted">Evaluating bindings…</p>
+          <ul id="validationList" class="validation-list"></ul>
+        </section>
       </section>
 
       <section class="panel center">
@@ -37,14 +52,23 @@
             <div class="muted">Valve shell CAD loaded locally. Click a control to assign it.</div>
           </div>
           <div class="gizmo-modes">
-            <button id="paintRegionBtn" type="button" class="mode-btn">Paint Region</button>
-            <button id="clearRegionBtn" type="button" class="mode-btn">Clear Region</button>
-            <label class="brush-control">
-              <span>Brush</span>
-              <input id="paintBrushSize" type="range" min="1" max="10" value="3" />
-              <output id="paintBrushSizeValue">3</output>
-            </label>
             <button id="toggleOverlayBtn" type="button" class="mode-btn active">Overlay</button>
+            <div id="deckToolsMenu" class="deck-tools-menu">
+              <button id="deckToolsToggleBtn" type="button" class="mode-btn" aria-expanded="false" aria-controls="deckToolsPanel">Tools</button>
+              <div id="deckToolsPanel" class="deck-tools-panel hidden">
+                <div class="deck-tools-section-title">Region Mapping</div>
+                <p class="deck-tools-note">Legacy shell-paint tools. Hidden by default to keep the deck view cleaner.</p>
+                <div class="deck-tools-actions">
+                  <button id="paintRegionBtn" type="button" class="mode-btn">Paint Region</button>
+                  <button id="clearRegionBtn" type="button" class="mode-btn">Clear Region</button>
+                </div>
+                <label class="brush-control">
+                  <span>Brush</span>
+                  <input id="paintBrushSize" type="range" min="1" max="10" value="3" />
+                  <output id="paintBrushSizeValue">3</output>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
         <div id="deckContainer">
@@ -178,6 +202,44 @@
                 </div>
               </div>
               </div>
+            </div>
+            <div id="bindingEditorAxisPanel" class="axis-binding-panel hidden">
+              <label class="editor-field">
+                <span>Stick / Pad Mode</span>
+                <select id="bindingEditorAxisMode">
+                  <option value="mouse_move">Mouse Move</option>
+                  <option value="digital_directions">Digital Directions</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </label>
+              <label class="editor-field">
+                <span>Editing Slot</span>
+                <select id="bindingEditorAxisSlot">
+                  <option value="click">Click</option>
+                  <option value="move">Move</option>
+                  <option value="up">Up</option>
+                  <option value="down">Down</option>
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+              <div class="axis-preset-buttons">
+                <button id="bindingEditorAxisMousePresetBtn" type="button">Mouse Move</button>
+                <button id="bindingEditorAxisWasdPresetBtn" type="button">WASD</button>
+                <button id="bindingEditorAxisArrowsPresetBtn" type="button">Arrows</button>
+              </div>
+              <div id="bindingEditorAxisSummary" class="axis-summary" aria-live="polite"></div>
+              <div class="axis-fine-tune">
+                <label class="editor-field">
+                  <span>Sensitivity</span>
+                  <input id="bindingEditorAxisSensitivity" type="number" min="0.1" max="3" step="0.1" />
+                </label>
+                <label class="editor-field">
+                  <span>Deadzone</span>
+                  <input id="bindingEditorAxisDeadzone" type="number" min="0" max="1" step="0.01" />
+                </label>
+              </div>
+              <div class="editor-note">Use input composer above to fill selected slot. Click slot changes what gets edited.</div>
             </div>
             <ul id="bindingEditorStepList" class="editor-step-list"></ul>
             <div id="bindingEditorStepAdd" class="editor-step-add hidden">

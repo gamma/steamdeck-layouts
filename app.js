@@ -52,8 +52,11 @@ const state = {
   activeChordIds: [],
   bindingInputMode: "keys",
   bindingOverlayVisible: true,
+  deckToolsOpen: false,
+  themeMode: "auto",
   bindingEditorOpen: false,
   bindingEditorAdvancedOpen: false,
+  bindingEditorAxisSlot: "click",
   communityDialogOpen: false,
   bindings: Object.fromEntries(controls.map((c) => [c.id, []]))
 };
@@ -63,6 +66,20 @@ const DEFAULT_LAYOUT_URL = "./saved-layouts/steamdeck-layout-2026-03-11.json";
 const TARGET_MODEL_WIDTH = 4.35;
 const FALLBACK_BODY_SIZE = [4.3, 1.8, 1.25];
 const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M"];
+const CRITICAL_CONTROL_IDS = ["left_stick", "right_stick", "a", "b", "x", "y", "left_trigger", "right_trigger", "left_bumper", "right_bumper", "menu", "view"];
+const AXIS_CONTROL_MODES = [
+  { value: "mouse_move", label: "Mouse Move" },
+  { value: "digital_directions", label: "Digital Directions" },
+  { value: "hybrid", label: "Hybrid" }
+];
+const AXIS_CONTROL_SLOTS = [
+  { value: "click", label: "Click" },
+  { value: "move", label: "Move" },
+  { value: "up", label: "Up" },
+  { value: "down", label: "Down" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" }
+];
 const ACTIVATOR_TYPES = [
   { value: "regular_press", label: "Full Press" },
   { value: "double_press", label: "Double Press" },
@@ -72,6 +89,8 @@ const ACTIVATOR_TYPES = [
   { value: "chorded_press", label: "Chorded Press" }
 ];
 const MODIFIER_TOKENS = ["Ctrl", "Shift", "Alt", "Meta"];
+const THEME_STORAGE_KEY = "steamdeck-layout-theme";
+const themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const el = {
   gameSearchInput: document.getElementById("gameSearchInput"),
@@ -79,6 +98,9 @@ const el = {
   layoutSearchInput: document.getElementById("layoutSearchInput"),
   layoutSortSelect: document.getElementById("layoutSortSelect"),
   toggleOverlayBtn: document.getElementById("toggleOverlayBtn"),
+  deckToolsMenu: document.getElementById("deckToolsMenu"),
+  deckToolsToggleBtn: document.getElementById("deckToolsToggleBtn"),
+  deckToolsPanel: document.getElementById("deckToolsPanel"),
   gameResultsList: document.getElementById("gameResultsList"),
   layoutResultsList: document.getElementById("layoutResultsList"),
   layoutStatus: document.getElementById("layoutStatus"),
@@ -93,6 +115,9 @@ const el = {
   currentCommunitySummary: document.getElementById("currentCommunitySummary"),
   bindingsTable: document.getElementById("bindingsTable"),
   selectionInfo: document.getElementById("selectionInfo"),
+  validationBadge: document.getElementById("validationBadge"),
+  validationSummary: document.getElementById("validationSummary"),
+  validationList: document.getElementById("validationList"),
   paintRegionBtn: document.getElementById("paintRegionBtn"),
   clearRegionBtn: document.getElementById("clearRegionBtn"),
   paintBrushSize: document.getElementById("paintBrushSize"),
@@ -101,6 +126,9 @@ const el = {
   debugMapBtn: document.getElementById("debugMapBtn"),
   saveLayoutBtn: document.getElementById("saveLayoutBtn"),
   loadLayoutBtn: document.getElementById("loadLayoutBtn"),
+  themeAutoBtn: document.getElementById("themeAutoBtn"),
+  themeLightBtn: document.getElementById("themeLightBtn"),
+  themeDarkBtn: document.getElementById("themeDarkBtn"),
   fileInput: document.getElementById("fileInput"),
   rowTemplate: document.getElementById("bindingRowTemplate"),
   gameResultTemplate: document.getElementById("gameResultTemplate"),
@@ -127,6 +155,15 @@ const el = {
   bindingEditorModeMouseBtn: document.getElementById("bindingEditorModeMouseBtn"),
   bindingEditorKeysPanel: document.getElementById("bindingEditorKeysPanel"),
   bindingEditorMousePanel: document.getElementById("bindingEditorMousePanel"),
+  bindingEditorAxisPanel: document.getElementById("bindingEditorAxisPanel"),
+  bindingEditorAxisMode: document.getElementById("bindingEditorAxisMode"),
+  bindingEditorAxisSlot: document.getElementById("bindingEditorAxisSlot"),
+  bindingEditorAxisMousePresetBtn: document.getElementById("bindingEditorAxisMousePresetBtn"),
+  bindingEditorAxisWasdPresetBtn: document.getElementById("bindingEditorAxisWasdPresetBtn"),
+  bindingEditorAxisArrowsPresetBtn: document.getElementById("bindingEditorAxisArrowsPresetBtn"),
+  bindingEditorAxisSummary: document.getElementById("bindingEditorAxisSummary"),
+  bindingEditorAxisSensitivity: document.getElementById("bindingEditorAxisSensitivity"),
+  bindingEditorAxisDeadzone: document.getElementById("bindingEditorAxisDeadzone"),
   bindingEditorPressedMods: document.getElementById("bindingEditorPressedMods"),
   bindingEditorClearInputBtn: document.getElementById("bindingEditorClearInputBtn"),
   mouseLeftBtn: document.getElementById("mouseLeftBtn"),
@@ -182,7 +219,15 @@ let shellPreviewFaces = new Set();
 let pendingPaintRegions = null;
 let isPainting = false;
 let selectionAnimation = null;
+let sceneRef = null;
+let shellMaterialRef = null;
+let fallbackMaterialRef = null;
+let bezelMaterialRef = null;
+let screenMaterialRef = null;
+let screenArtworkMaterialRef = null;
+let lightRefs = null;
 
+initTheme();
 initUI();
 initScene();
 renderBindings();
@@ -207,6 +252,20 @@ function initUI() {
     state.bindingOverlayVisible = !state.bindingOverlayVisible;
     el.toggleOverlayBtn.classList.toggle("active", state.bindingOverlayVisible);
     renderBindingOverlays();
+  });
+  el.deckToolsToggleBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    state.deckToolsOpen = !state.deckToolsOpen;
+    syncDeckToolsVisibility();
+  });
+  el.deckToolsPanel.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  document.addEventListener("click", (event) => {
+    if (!state.deckToolsOpen) return;
+    if (el.deckToolsMenu.contains(event.target)) return;
+    state.deckToolsOpen = false;
+    syncDeckToolsVisibility();
   });
   el.dialogLoadLayoutBtn.addEventListener("click", () => {
     if (state.selectedLayoutDetail) loadCommunityLayout(state.selectedLayoutDetail);
@@ -253,6 +312,9 @@ function initUI() {
 
   el.saveLayoutBtn.addEventListener("click", saveLayoutToStorage);
   el.loadLayoutBtn.addEventListener("click", loadLayoutFromStorage);
+  el.themeAutoBtn.addEventListener("click", () => setThemeMode("auto"));
+  el.themeLightBtn.addEventListener("click", () => setThemeMode("light"));
+  el.themeDarkBtn.addEventListener("click", () => setThemeMode("dark"));
   el.fileInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -268,6 +330,142 @@ function initUI() {
     el.paintBrushSizeValue.value = String(state.paintBrushSize);
   });
   el.paintBrushSizeValue.value = String(state.paintBrushSize);
+  syncDeckToolsVisibility();
+}
+
+function initTheme() {
+  const storedMode = readThemeMode();
+  applyThemeMode(storedMode, false);
+
+  const handleThemeChange = () => {
+    if (state.themeMode === "auto") {
+      applyThemeMode("auto", false);
+    }
+  };
+
+  if (typeof themeMediaQuery.addEventListener === "function") {
+    themeMediaQuery.addEventListener("change", handleThemeChange);
+  } else if (typeof themeMediaQuery.addListener === "function") {
+    themeMediaQuery.addListener(handleThemeChange);
+  }
+}
+
+function readThemeMode() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "dark" || stored === "auto" ? stored : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+function getResolvedTheme(mode) {
+  if (mode === "light" || mode === "dark") return mode;
+  return themeMediaQuery.matches ? "dark" : "light";
+}
+
+function syncThemeControls() {
+  const buttons = [
+    [el.themeAutoBtn, "auto"],
+    [el.themeLightBtn, "light"],
+    [el.themeDarkBtn, "dark"]
+  ];
+  for (const [button, mode] of buttons) {
+    if (!button) continue;
+    const active = state.themeMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+}
+
+function applyThemeMode(mode, persist = true) {
+  state.themeMode = mode;
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, mode);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+  const resolvedTheme = getResolvedTheme(mode);
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.dataset.themeMode = mode;
+  syncThemeControls();
+  updateDeckSceneTheme();
+}
+
+function setThemeMode(mode) {
+  applyThemeMode(mode, true);
+}
+
+function readCssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function updateDeckSceneTheme() {
+  if (!sceneRef) return;
+  const bg = readCssVar("--deck-bg") || "#070c18";
+  sceneRef.background = null;
+  sceneRef.fog = new THREE.Fog(bg, 5.5, 11);
+  updateDeckVisualTheme();
+}
+
+function isLightTheme() {
+  return document.documentElement.dataset.theme === "light";
+}
+
+function updateDeckVisualTheme() {
+  const lightTheme = isLightTheme();
+  if (shellMaterialRef) {
+    shellMaterialRef.color.set(lightTheme ? 0x7f8ba3 : 0x2f3747);
+    shellMaterialRef.metalness = lightTheme ? 0.12 : 0.28;
+    shellMaterialRef.roughness = lightTheme ? 0.56 : 0.76;
+    shellMaterialRef.needsUpdate = true;
+  }
+  if (fallbackMaterialRef) {
+    fallbackMaterialRef.color.set(lightTheme ? 0x8a93a8 : 0x202a3f);
+    fallbackMaterialRef.metalness = lightTheme ? 0.12 : 0.25;
+    fallbackMaterialRef.roughness = lightTheme ? 0.54 : 0.7;
+    fallbackMaterialRef.needsUpdate = true;
+  }
+  if (bezelMaterialRef) {
+    bezelMaterialRef.color.set(lightTheme ? 0xd3d9e5 : 0x111723);
+    bezelMaterialRef.metalness = lightTheme ? 0.08 : 0.15;
+    bezelMaterialRef.roughness = lightTheme ? 0.62 : 0.85;
+    bezelMaterialRef.needsUpdate = true;
+  }
+  if (screenMaterialRef) {
+    screenMaterialRef.color.set(lightTheme ? 0xffffff : 0xeaf3ff);
+    screenMaterialRef.opacity = lightTheme ? 0.22 : 0.28;
+    screenMaterialRef.roughness = lightTheme ? 0.08 : 0.12;
+    screenMaterialRef.clearcoat = 1;
+    screenMaterialRef.clearcoatRoughness = lightTheme ? 0.06 : 0.1;
+    screenMaterialRef.reflectivity = lightTheme ? 0.62 : 0.52;
+    screenMaterialRef.needsUpdate = true;
+  }
+  if (screenArtworkMaterialRef) {
+    screenArtworkMaterialRef.color.set(lightTheme ? 0xf1f7ff : 0xffffff);
+    screenArtworkMaterialRef.needsUpdate = true;
+  }
+  if (lightRefs) {
+    const { ambient, key, fill, front, rim } = lightRefs;
+    ambient.intensity = lightTheme ? 2.75 : 2.15;
+    key.intensity = lightTheme ? 1.85 : 1.45;
+    key.color.set(lightTheme ? 0xffffff : 0xffffff);
+    fill.intensity = lightTheme ? 1.1 : 0.85;
+    fill.color.set(lightTheme ? 0xe4eefc : 0xbfd6ff);
+    front.intensity = lightTheme ? 0.95 : 0.75;
+    rim.intensity = lightTheme ? 0.45 : 0.6;
+    rim.color.set(lightTheme ? 0x8fb0e8 : 0x7aa2ff);
+  }
+  recolorShellRegions();
+}
+
+function syncDeckToolsVisibility() {
+  el.deckToolsPanel.classList.toggle("hidden", !state.deckToolsOpen);
+  el.deckToolsToggleBtn.classList.toggle("active", state.deckToolsOpen || state.paintMode);
+  el.deckToolsToggleBtn.classList.toggle("warn", state.paintMode);
+  el.deckToolsToggleBtn.setAttribute("aria-expanded", String(state.deckToolsOpen));
 }
 
 function applyLayoutData(json, requireBindings = true) {
@@ -332,6 +530,7 @@ function createDefaultActivator(binding = "", index = 0) {
     type: "regular_press",
     binding,
     actions: binding ? [{ output: binding, delayMs: 0 }] : [],
+    axisBinding: null,
     chord: "",
     toggle: false,
     interruptable: true,
@@ -364,6 +563,7 @@ function sanitizeActivator(value, index = 0) {
   if (!next.binding && next.actions.length) {
     next.binding = next.actions[0].output;
   }
+  next.axisBinding = value.axisBinding ? sanitizeAxisBinding(value.axisBinding) : null;
   next.chord = typeof next.chord === "string" ? next.chord.trim() : "";
   next.toggle = Boolean(next.toggle);
   next.interruptable = Boolean(next.interruptable);
@@ -377,6 +577,32 @@ function sanitizeActivator(value, index = 0) {
   next.haptics = ["off", "low", "medium", "high"].includes(next.haptics) ? next.haptics : "off";
   next.notes = typeof next.notes === "string" ? next.notes.trim() : "";
   return next;
+}
+
+function sanitizeAxisBinding(value) {
+  const base = {
+    mode: "mouse_move",
+    click: "",
+    move: "",
+    up: "",
+    down: "",
+    left: "",
+    right: "",
+    sensitivity: 1,
+    deadzone: 0.15
+  };
+  if (!value || typeof value !== "object") return base;
+  return {
+    mode: AXIS_CONTROL_MODES.some((entry) => entry.value === value.mode) ? value.mode : base.mode,
+    click: typeof value.click === "string" ? value.click.trim() : "",
+    move: typeof value.move === "string" ? value.move.trim() : "",
+    up: typeof value.up === "string" ? value.up.trim() : "",
+    down: typeof value.down === "string" ? value.down.trim() : "",
+    left: typeof value.left === "string" ? value.left.trim() : "",
+    right: typeof value.right === "string" ? value.right.trim() : "",
+    sensitivity: clampNumber(value.sensitivity, 0.1, 3, base.sensitivity),
+    deadzone: clampNumber(value.deadzone, 0, 1, base.deadzone)
+  };
 }
 
 function normalizeActivatorActions(actions) {
@@ -444,7 +670,129 @@ function getControlActivatorsForEditing(controlId) {
   return current;
 }
 
+function getSelectedControl() {
+  return state.selectedControlId ? getControlById(state.selectedControlId) : null;
+}
+
+function isAxisControl(controlId) {
+  const control = getControlById(controlId);
+  return control?.kind === "stick" || control?.kind === "pad";
+}
+
+function getAxisBindingForEditing(activator) {
+  if (!activator) return null;
+  if (!activator.axisBinding) activator.axisBinding = sanitizeAxisBinding(null);
+  return activator.axisBinding;
+}
+
+function seedAxisBindingFromLegacyActions(active) {
+  const axisBinding = getAxisBindingForEditing(active);
+  if (!axisBinding) return null;
+  if (activatorHasConfiguredAxisBinding(active)) return axisBinding;
+  const legacy = active.actions.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? active.binding;
+  if (!legacy) return axisBinding;
+  if (/mouse move/i.test(legacy)) axisBinding.move = legacy;
+  else if (/^(left mouse|right mouse|middle mouse)$/i.test(legacy)) axisBinding.click = legacy;
+  else if (/^(w|a|s|d|up|down|left|right)$/i.test(legacy)) {
+    axisBinding.mode = "digital_directions";
+    axisBinding.up = legacy;
+  } else {
+    axisBinding.click = legacy;
+  }
+  return axisBinding;
+}
+
+function getAxisSlotValue(axisBinding, slot) {
+  if (!axisBinding) return "";
+  return typeof axisBinding[slot] === "string" ? axisBinding[slot].trim() : "";
+}
+
+function setAxisSlotValue(axisBinding, slot, value) {
+  if (!axisBinding || !slot) return;
+  axisBinding[slot] = typeof value === "string" ? value.trim() : "";
+}
+
+function formatAxisBindingSummary(axisBinding) {
+  if (!axisBinding) return "Unmapped";
+  const parts = [AXIS_CONTROL_MODES.find((entry) => entry.value === axisBinding.mode)?.label ?? "Mouse Move"];
+  const click = getAxisSlotValue(axisBinding, "click");
+  const move = getAxisSlotValue(axisBinding, "move");
+  const directions = ["up", "down", "left", "right"]
+    .map((slot) => getAxisSlotValue(axisBinding, slot))
+    .filter(Boolean);
+  if (!click && !move && !directions.length) return "Unmapped";
+  if (click) parts.push(`Click: ${click}`);
+  if (move) parts.push(`Move: ${move}`);
+  if (directions.length) parts.push(`Dirs: ${directions.join("/")}`);
+  parts.push(`Deadzone ${axisBinding.deadzone.toFixed(2)}`);
+  return parts.join(" • ");
+}
+
+function summarizeAxisBindingForActivator(axisBinding) {
+  return formatAxisBindingSummary(axisBinding);
+}
+
+function renderAxisBindingSummary(axisBinding = null) {
+  if (!el.bindingEditorAxisSummary) return;
+  el.bindingEditorAxisSummary.innerHTML = "";
+  const binding = axisBinding ?? (state.bindingEditorOpen && state.selectedControlId
+    ? getAxisBindingForEditing(getControlActivatorsForEditing(state.selectedControlId)[state.selectedActivatorIndex])
+    : null);
+  if (!binding) {
+    const empty = document.createElement("span");
+    empty.className = "axis-summary-chip empty";
+    empty.textContent = "No axis binding";
+    el.bindingEditorAxisSummary.appendChild(empty);
+    return;
+  }
+  const chips = [];
+  chips.push(binding.mode === "mouse_move" ? "Mouse Move enabled" : binding.mode === "digital_directions" ? "Digital directions enabled" : "Hybrid enabled");
+  const slots = [
+    ["click", "Click"],
+    ["move", "Move"],
+    ["up", "Up"],
+    ["down", "Down"],
+    ["left", "Left"],
+    ["right", "Right"]
+  ];
+  slots.forEach(([slot, label]) => {
+    const value = getAxisSlotValue(binding, slot);
+    chips.push(value ? `${label}: ${value}` : `${label}: off`);
+  });
+  chips.forEach((text) => {
+    const chip = document.createElement("span");
+    chip.className = "axis-summary-chip";
+    chip.textContent = text;
+    el.bindingEditorAxisSummary.appendChild(chip);
+  });
+}
+
+function syncAxisPresetButtons(axisBinding = null) {
+  const binding = axisBinding ?? null;
+  const mode = binding?.mode ?? el.bindingEditorAxisMode.value;
+  el.bindingEditorAxisMousePresetBtn.classList.toggle("active", mode === "mouse_move");
+  el.bindingEditorAxisWasdPresetBtn.classList.toggle("active", mode === "digital_directions" && [
+    getAxisSlotValue(binding, "up"),
+    getAxisSlotValue(binding, "down"),
+    getAxisSlotValue(binding, "left"),
+    getAxisSlotValue(binding, "right")
+  ].every((value) => value === "W" || value === "A" || value === "S" || value === "D"));
+  el.bindingEditorAxisArrowsPresetBtn.classList.toggle("active", mode === "digital_directions" && [
+    getAxisSlotValue(binding, "up"),
+    getAxisSlotValue(binding, "down"),
+    getAxisSlotValue(binding, "left"),
+    getAxisSlotValue(binding, "right")
+  ].every((value) => value === "Up" || value === "Down" || value === "Left" || value === "Right"));
+}
+
 function getBindingSummaryEntries(controlId) {
+  const control = getControlById(controlId);
+  if (control?.kind === "stick" || control?.kind === "pad") {
+    const axisEntries = getControlActivators(controlId)
+      .filter((activator) => activatorHasConfiguredAxisBinding(activator))
+      .map((activator) => formatAxisBindingSummary(activator.axisBinding));
+    if (axisEntries.length) return axisEntries;
+  }
   return getControlActivators(controlId)
     .filter((activator) => activator.actions.length || activator.binding || activator.chord)
     .map((activator) => formatActivatorSummary(activator));
@@ -496,6 +844,7 @@ function renderBindings() {
     if (state.selectedControlId === control.id) tr.classList.add("selected");
     el.bindingsTable.appendChild(fragment);
   });
+  renderValidationSummary();
 }
 
 function updateSelectionInfo() {
@@ -561,6 +910,22 @@ function initBindingEditor() {
   el.bindingEditorModeKeysBtn.addEventListener("click", () => setBindingInputMode("keys"));
   el.bindingEditorModeMouseBtn.addEventListener("click", () => setBindingInputMode("mouse"));
   el.bindingEditorClearInputBtn.addEventListener("click", clearSelectedInput);
+  el.bindingEditorAxisSlot.addEventListener("change", () => {
+    state.bindingEditorAxisSlot = el.bindingEditorAxisSlot.value;
+    syncAxisBindingEditor();
+  });
+  el.bindingEditorAxisMode.addEventListener("change", () => {
+    updateAxisBindingFromEditor();
+  });
+  el.bindingEditorAxisSensitivity.addEventListener("input", () => {
+    updateAxisBindingFromEditor();
+  });
+  el.bindingEditorAxisDeadzone.addEventListener("input", () => {
+    updateAxisBindingFromEditor();
+  });
+  el.bindingEditorAxisMousePresetBtn.addEventListener("click", () => applyAxisPreset("mouse_move"));
+  el.bindingEditorAxisWasdPresetBtn.addEventListener("click", () => applyAxisPreset("wasd"));
+  el.bindingEditorAxisArrowsPresetBtn.addEventListener("click", () => applyAxisPreset("arrows"));
   el.mouseLeftBtn.addEventListener("click", () => applyMouseToken("Left Mouse"));
   el.mouseRightBtn.addEventListener("click", () => applyMouseToken("Right Mouse"));
   el.mouseMiddleBtn.addEventListener("click", () => applyMouseToken("Middle Mouse"));
@@ -628,6 +993,11 @@ function applyMouseToken(token) {
   const activators = getControlActivatorsForEditing(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) {
+    el.bindingEditorStepInput.focus();
+    return;
+  }
+  if (isAxisControl(state.selectedControlId)) {
+    syncCurrentInputFromEditor();
     el.bindingEditorStepInput.focus();
     return;
   }
@@ -700,7 +1070,12 @@ function syncInputModeTabs() {
   el.bindingEditorModeMouseBtn.classList.toggle("active", isMouse);
   el.bindingEditorKeysPanel.classList.toggle("hidden", isMouse);
   el.bindingEditorMousePanel.classList.toggle("hidden", !isMouse);
-  focusKeyInputIfVisible();
+  const axisVisible = !el.bindingEditorAxisPanel.classList.contains("hidden");
+  if (axisVisible) {
+    requestAnimationFrame(() => el.bindingEditorStepInput.focus());
+  } else {
+    focusKeyInputIfVisible();
+  }
 }
 
 function focusKeyInputIfVisible() {
@@ -736,10 +1111,12 @@ function syncAdvancedVisibility() {
 
 function showBindingEditor() {
   if (!state.selectedControlId) return;
-  const control = getControlById(state.selectedControlId);
-  el.bindingEditorTitle.textContent = `Edit ${control?.name ?? "Button"}`;
+  const control = getSelectedControl();
+  const kindLabel = control?.kind === "stick" ? "Stick" : control?.kind === "pad" ? "Touchpad" : "Button";
+  el.bindingEditorTitle.textContent = `Edit ${control?.name ?? kindLabel}`;
   state.bindingEditorOpen = true;
   state.bindingEditorAdvancedOpen = false;
+  state.bindingEditorAxisSlot = "click";
   state.bindingInputMode = "keys";
   state.activeStepModifiers = [];
   syncModifierButtons();
@@ -762,6 +1139,7 @@ function hideBindingEditor() {
 
 function renderBindingEditor() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const control = getSelectedControl();
   const activators = getControlActivators(state.selectedControlId);
   if (!activators.length) {
     activators.push(createDefaultActivator("", 0));
@@ -782,6 +1160,8 @@ function renderBindingEditor() {
   });
 
   const active = activators[state.selectedActivatorIndex];
+  const axisControl = control?.kind === "stick" || control?.kind === "pad";
+  const axisBinding = axisControl ? seedAxisBindingFromLegacyActions(active) : null;
   let draftIndex = null;
   for (let index = active.actions.length - 1; index >= 0; index -= 1) {
     if (!active.actions[index]?.output) {
@@ -803,7 +1183,18 @@ function renderBindingEditor() {
   el.bindingEditorRepeatRate.value = String(active.repeatRate);
   el.bindingEditorHaptics.value = active.haptics;
   el.bindingEditorNotes.value = active.notes;
-  if (active.actions.length === 0) {
+  el.bindingEditorAxisPanel.classList.toggle("hidden", !axisControl);
+  el.bindingEditorStepList.classList.toggle("hidden", axisControl);
+  el.bindingEditorStepAdd.classList.toggle("hidden", axisControl || active.actions.length === 0);
+  el.bindingEditorStepInput.placeholder = axisControl ? "Type binding for selected slot…" : "Press a key…";
+  el.bindingEditorAxisMode.value = axisBinding?.mode ?? "mouse_move";
+  el.bindingEditorAxisSensitivity.value = String(axisBinding?.sensitivity ?? 1);
+  el.bindingEditorAxisDeadzone.value = String(axisBinding?.deadzone ?? 0.15);
+  el.bindingEditorAxisSlot.value = state.bindingEditorAxisSlot;
+  if (axisControl) {
+    syncAxisBindingEditor();
+    syncCurrentInputFromEditor();
+  } else if (active.actions.length === 0) {
     populateInputFromOutput("");
     syncCurrentInputFromEditor();
   } else {
@@ -811,7 +1202,7 @@ function renderBindingEditor() {
     state.activeStepModifiers = [];
     syncModifierButtons();
   }
-  renderActionStepList(active.actions);
+  renderActionStepList(axisControl ? [] : active.actions);
   focusKeyInputIfVisible();
 }
 
@@ -1001,6 +1392,11 @@ function populateInputFromOutput(output) {
   el.bindingEditorStepInput.value = payload.length ? payload.join("+") : output;
 }
 
+function populateInputFromAxisSlot(axisBinding, slot) {
+  const value = getAxisSlotValue(axisBinding, slot);
+  populateInputFromOutput(value);
+}
+
 function normalizeStepInputAndModifiers(enforceSingleToken = false) {
   const raw = el.bindingEditorStepInput.value.trim();
   if (!raw || !raw.includes("+")) return;
@@ -1035,6 +1431,17 @@ function syncCurrentInputFromEditor() {
   const activators = getControlActivatorsForEditing(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
+  if (isAxisControl(state.selectedControlId)) {
+    const axisBinding = getAxisBindingForEditing(active);
+    if (!axisBinding) return;
+    setAxisSlotValue(axisBinding, state.bindingEditorAxisSlot, composed);
+    active.binding = summarizeAxisBindingForActivator(axisBinding);
+    renderAxisBindingSummary();
+    renderBindings();
+    updateSelectionInfo();
+    renderBindingOverlays();
+    return;
+  }
   if (active.actions.length === 0) {
     if (composed) {
       active.actions = [{ output: composed, delayMs: 0 }];
@@ -1070,6 +1477,73 @@ function resetDraftStepInput() {
   syncModifierButtons();
 }
 
+function syncAxisBindingEditor() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  const axisBinding = getAxisBindingForEditing(active);
+  if (!axisBinding) return;
+  const slot = state.bindingEditorAxisSlot || "click";
+  populateInputFromAxisSlot(axisBinding, slot);
+  el.bindingEditorAxisMode.value = axisBinding.mode;
+  el.bindingEditorAxisSensitivity.value = String(axisBinding.sensitivity);
+  el.bindingEditorAxisDeadzone.value = String(axisBinding.deadzone);
+  syncAxisPresetButtons(axisBinding);
+  renderAxisBindingSummary(axisBinding);
+}
+
+function updateAxisBindingFromEditor() {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  const axisBinding = getAxisBindingForEditing(active);
+  if (!axisBinding) return;
+  axisBinding.mode = el.bindingEditorAxisMode.value;
+  axisBinding.sensitivity = clampNumber(el.bindingEditorAxisSensitivity.value, 0.1, 3, axisBinding.sensitivity);
+  axisBinding.deadzone = clampNumber(el.bindingEditorAxisDeadzone.value, 0, 1, axisBinding.deadzone);
+  active.binding = summarizeAxisBindingForActivator(axisBinding);
+  syncAxisPresetButtons(axisBinding);
+  renderAxisBindingSummary(axisBinding);
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
+function applyAxisPreset(preset) {
+  if (!state.bindingEditorOpen || !state.selectedControlId) return;
+  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const active = activators[state.selectedActivatorIndex];
+  if (!active) return;
+  const axisBinding = getAxisBindingForEditing(active);
+  if (!axisBinding) return;
+  if (preset === "mouse_move") {
+    axisBinding.mode = "mouse_move";
+    axisBinding.move = "Mouse Move";
+    if (!axisBinding.click) axisBinding.click = "Left Mouse";
+  } else if (preset === "wasd") {
+    axisBinding.mode = "digital_directions";
+    axisBinding.up = "W";
+    axisBinding.down = "S";
+    axisBinding.left = "A";
+    axisBinding.right = "D";
+  } else if (preset === "arrows") {
+    axisBinding.mode = "digital_directions";
+    axisBinding.up = "Up";
+    axisBinding.down = "Down";
+    axisBinding.left = "Left";
+    axisBinding.right = "Right";
+  }
+  active.binding = summarizeAxisBindingForActivator(axisBinding);
+  syncAxisBindingEditor();
+  syncAxisPresetButtons(axisBinding);
+  renderAxisBindingSummary(axisBinding);
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+}
+
 function addActivatorForSelectedControl() {
   if (!state.selectedControlId) return;
   const activators = getControlActivators(state.selectedControlId);
@@ -1100,6 +1574,20 @@ function updateSelectedActivatorFromEditor() {
   const activators = getControlActivatorsForEditing(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
+  if (isAxisControl(state.selectedControlId)) {
+    const axisBinding = getAxisBindingForEditing(active);
+    if (!axisBinding) return;
+    axisBinding.mode = el.bindingEditorAxisMode.value;
+    axisBinding.sensitivity = clampNumber(el.bindingEditorAxisSensitivity.value, 0.1, 3, axisBinding.sensitivity);
+    axisBinding.deadzone = clampNumber(el.bindingEditorAxisDeadzone.value, 0, 1, axisBinding.deadzone);
+    active.binding = summarizeAxisBindingForActivator(axisBinding);
+    syncAxisPresetButtons(axisBinding);
+    renderAxisBindingSummary(axisBinding);
+    renderBindings();
+    updateSelectionInfo();
+    renderBindingOverlays();
+    return;
+  }
   active.type = el.bindingEditorType.value;
   active.chord = getChordSelectionValue();
   active.toggle = el.bindingEditorToggle.checked;
@@ -1416,6 +1904,175 @@ function setLayoutStatus(message, isError = false) {
   el.layoutStatus.classList.toggle("error", isError);
 }
 
+function renderValidationSummary() {
+  const report = getValidationReport();
+  const mappedCount = controls.filter((control) => controlHasConfiguredBinding(control.id)).length;
+
+  el.validationBadge.textContent = report.warnings.length ? `${report.warnings.length} warning${report.warnings.length === 1 ? "" : "s"}` : "Ready";
+  el.validationBadge.classList.toggle("ok", report.warnings.length === 0);
+  el.validationBadge.classList.toggle("warn", report.warnings.length > 0);
+  el.validationSummary.textContent = `${mappedCount}/${controls.length} controls mapped • ${report.criticalMappedCount}/${CRITICAL_CONTROL_IDS.length} critical controls covered`;
+
+  el.validationList.innerHTML = "";
+  if (!report.warnings.length) {
+    const item = document.createElement("li");
+    item.className = "validation-empty";
+    item.textContent = "No blocking warnings detected. Local export is ready.";
+    el.validationList.appendChild(item);
+    return;
+  }
+
+  report.warnings.forEach((warning) => {
+    const item = document.createElement("li");
+    item.className = "validation-item";
+
+    const main = document.createElement("div");
+    main.className = "validation-item-main";
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = warning.title;
+    copy.appendChild(title);
+
+    if (warning.detail) {
+      const detail = document.createElement("p");
+      detail.textContent = warning.detail;
+      copy.appendChild(detail);
+    }
+    main.appendChild(copy);
+
+    if (warning.controlId) {
+      const reviewBtn = document.createElement("button");
+      reviewBtn.type = "button";
+      reviewBtn.textContent = "Review";
+      reviewBtn.addEventListener("click", () => {
+        selectControl(warning.controlId);
+        renderBindings();
+        showBindingEditor();
+      });
+      main.appendChild(reviewBtn);
+    }
+
+    item.appendChild(main);
+    el.validationList.appendChild(item);
+  });
+}
+
+function getValidationReport() {
+  const warnings = [];
+
+  const missingCriticalControls = CRITICAL_CONTROL_IDS.filter((controlId) => !controlHasConfiguredBinding(controlId));
+  missingCriticalControls.forEach((controlId) => {
+    const control = getControlById(controlId);
+    warnings.push({
+      controlId,
+      title: `${control?.name ?? controlId} is unmapped`,
+      detail: "Critical controls should have at least one action before export."
+    });
+  });
+
+  findDuplicateCriticalBindings().forEach((entry) => {
+    const names = entry.controlIds
+      .map((controlId) => getControlById(controlId)?.name ?? controlId)
+      .join(", ");
+    warnings.push({
+      controlId: entry.controlIds[0] ?? null,
+      title: `Duplicate critical binding: ${entry.binding}`,
+      detail: `Shared by ${names}. Confirm this overlap is intentional.`
+    });
+  });
+
+  controls.forEach((control) => {
+    const activators = getControlActivators(control.id);
+    activators.forEach((activator, index) => {
+      if (activatorHasPartialConfigWithoutAction(activator, activators.length)) {
+        warnings.push({
+          controlId: control.id,
+          title: `${control.name} has an empty activator`,
+          detail: `Activator ${index + 1} contains options but no action output.`
+        });
+      }
+    });
+  });
+
+  return {
+    warnings,
+    criticalMappedCount: CRITICAL_CONTROL_IDS.filter((controlId) => controlHasConfiguredBinding(controlId)).length
+  };
+}
+
+function controlHasConfiguredBinding(controlId) {
+  const control = getControlById(controlId);
+  if (control?.kind === "stick" || control?.kind === "pad") {
+    return getControlActivators(controlId).some((activator) => activatorHasConfiguredAxisBinding(activator) || activatorHasConfiguredAction(activator));
+  }
+  return getControlActivators(controlId).some((activator) => activatorHasConfiguredAction(activator));
+}
+
+function activatorHasConfiguredAction(activator) {
+  if (!activator || typeof activator !== "object") return false;
+  if (activator.actions?.some((step) => typeof step?.output === "string" && step.output.trim())) return true;
+  return Boolean(typeof activator.binding === "string" && activator.binding.trim());
+}
+
+function activatorHasConfiguredAxisBinding(activator) {
+  if (!activator || typeof activator !== "object") return false;
+  const axisBinding = activator.axisBinding;
+  if (!axisBinding || typeof axisBinding !== "object") return false;
+  return ["click", "move", "up", "down", "left", "right"].some((slot) => getAxisSlotValue(axisBinding, slot));
+}
+
+function activatorHasPartialConfigWithoutAction(activator, activatorCount = 1) {
+  if (!activator || activatorHasConfiguredAction(activator)) return false;
+  if (activatorCount > 1) return true;
+  return Boolean(
+    activator.chord ||
+    activator.toggle ||
+    activator.turbo ||
+    activator.cycleBinding ||
+    activator.notes ||
+    activator.haptics !== "off" ||
+    activator.type !== "regular_press" ||
+    activator.doubleTapTime !== 0.2 ||
+    activator.longPressTime !== 0.35 ||
+    activator.fireStartDelay !== 0 ||
+    activator.fireEndDelay !== 0 ||
+    activator.repeatRate !== 0.15 ||
+    activator.interruptable !== true
+  );
+}
+
+function findDuplicateCriticalBindings() {
+  const bindingsByKey = new Map();
+  CRITICAL_CONTROL_IDS.forEach((controlId) => {
+    const primaryBinding = getPrimaryBindingSignature(controlId);
+    if (!primaryBinding) return;
+    const current = bindingsByKey.get(primaryBinding.key) ?? { binding: primaryBinding.label, controlIds: [] };
+    current.controlIds.push(controlId);
+    bindingsByKey.set(primaryBinding.key, current);
+  });
+  return Array.from(bindingsByKey.values()).filter((entry) => entry.controlIds.length > 1);
+}
+
+function getPrimaryBindingSignature(controlId) {
+  const control = getControlById(controlId);
+  const activators = getControlActivators(controlId);
+  for (const activator of activators) {
+    const raw = (control?.kind === "stick" || control?.kind === "pad")
+      ? (activatorHasConfiguredAxisBinding(activator)
+        ? summarizeAxisBindingForActivator(activator.axisBinding)
+        : activator.actions?.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? activator.binding)
+      : activator.actions?.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? activator.binding;
+    if (!raw || typeof raw !== "string" || !raw.trim()) continue;
+    const label = raw.trim();
+    return {
+      key: label.toLowerCase(),
+      label
+    };
+  }
+  return null;
+}
+
 function applyDebugBindings() {
   controls.forEach((control, index) => {
     const key = DEBUG_KEY_SEQUENCE[index] ?? `F${13 + (index - DEBUG_KEY_SEQUENCE.length)}`;
@@ -1445,6 +2102,10 @@ function buildLayoutPayload() {
 async function saveLayoutToStorage() {
   const payload = buildLayoutPayload();
   const text = JSON.stringify(payload, null, 2);
+  const validation = getValidationReport();
+  const savedMessageSuffix = validation.warnings.length
+    ? ` ${validation.warnings.length} validation warning${validation.warnings.length === 1 ? "" : "s"} remain.`
+    : " Export readiness looks good.";
   if ("showSaveFilePicker" in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -1459,7 +2120,7 @@ async function saveLayoutToStorage() {
       const writable = await handle.createWritable();
       await writable.write(text);
       await writable.close();
-      setLayoutStatus("Layout saved via File System Access.", false);
+      setLayoutStatus(`Layout saved via File System Access.${savedMessageSuffix}`, false);
     } catch (error) {
       if (error.name !== "AbortError") setLayoutStatus("Saving layout failed.", true);
     }
@@ -1470,7 +2131,7 @@ async function saveLayoutToStorage() {
     a.download = "steamdeck-layout.json";
     a.click();
     URL.revokeObjectURL(a.href);
-    setLayoutStatus("Layout downloaded locally.", false);
+    setLayoutStatus(`Layout downloaded locally.${savedMessageSuffix}`, false);
   }
 }
 
@@ -1516,23 +2177,25 @@ async function handleLayoutText(text) {
 
 function initScene() {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070c18);
-  scene.fog = new THREE.Fog(0x070c18, 5.5, 11);
+  sceneRef = scene;
 
   const camera = new THREE.PerspectiveCamera(50, el.deckContainer.clientWidth / el.deckContainer.clientHeight, 0.1, 100);
   camera.position.set(0, 1.2, 5.4);
   sceneCamera = camera;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(el.deckContainer.clientWidth, el.deckContainer.clientHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
   el.deckContainer.appendChild(renderer.domElement);
+  updateDeckSceneTheme();
 
   orbitControls = new OrbitControls(camera, renderer.domElement);
   orbitControls.enableDamping = true;
   orbitControls.target.set(0, 0.15, 0);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 2.15));
+  const ambientLight = new THREE.AmbientLight(0xffffff, 2.15);
+  scene.add(ambientLight);
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.45);
   keyLight.position.set(4, 6, 5);
   scene.add(keyLight);
@@ -1545,11 +2208,13 @@ function initScene() {
   const rimLight = new THREE.DirectionalLight(0x7aa2ff, 0.6);
   rimLight.position.set(-5, 2, -4);
   scene.add(rimLight);
+  lightRefs = { ambient: ambientLight, key: keyLight, fill: fillLight, front: frontLight, rim: rimLight };
 
   const deckRoot = new THREE.Group();
   scene.add(deckRoot);
   loadDeckModel(deckRoot);
   addDecorativeElements(scene);
+  updateDeckVisualTheme();
 
   const handlePaintPointer = (event, commit = false) => {
     if (!state.paintMode || !state.selectedControlId || !shellMesh) return;
@@ -1644,16 +2309,18 @@ function loadDeckModel(deckRoot) {
       geometry.translate(0, scaledSize.y * 0.18, 0);
 
       const material = new THREE.MeshStandardMaterial({
-        color: 0x2f3747,
+        color: isLightTheme() ? 0x7f8ba3 : 0x2f3747,
         vertexColors: true,
-        metalness: 0.28,
-        roughness: 0.76
+        metalness: isLightTheme() ? 0.12 : 0.28,
+        roughness: isLightTheme() ? 0.56 : 0.76
       });
+      shellMaterialRef = material;
       const colors = new Float32Array(geometry.attributes.position.count * 3);
       for (let i = 0; i < geometry.attributes.position.count; i += 1) {
-        colors[i * 3] = 0x2f / 255;
-        colors[i * 3 + 1] = 0x37 / 255;
-        colors[i * 3 + 2] = 0x47 / 255;
+        const base = isLightTheme() ? [0x7f, 0x8b, 0xa3] : [0x2f, 0x37, 0x47];
+        colors[i * 3] = base[0] / 255;
+        colors[i * 3 + 1] = base[1] / 255;
+        colors[i * 3 + 2] = base[2] / 255;
       }
       geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
       shellGeometry = geometry;
@@ -1674,32 +2341,64 @@ function loadDeckModel(deckRoot) {
 }
 
 function createFallbackDeckBody() {
+  const material = new THREE.MeshStandardMaterial({
+    color: isLightTheme() ? 0x8a93a8 : 0x202a3f,
+    metalness: isLightTheme() ? 0.12 : 0.25,
+    roughness: isLightTheme() ? 0.54 : 0.7
+  });
+  fallbackMaterialRef = material;
   return new THREE.Mesh(
     new THREE.BoxGeometry(...FALLBACK_BODY_SIZE),
-    new THREE.MeshStandardMaterial({ color: 0x202a3f, metalness: 0.25, roughness: 0.7 })
+    material
   );
 }
 
 function addDecorativeElements(scene) {
+  bezelMaterialRef = new THREE.MeshStandardMaterial({
+    color: isLightTheme() ? 0xd3d9e5 : 0x111723,
+    metalness: isLightTheme() ? 0.08 : 0.15,
+    roughness: isLightTheme() ? 0.62 : 0.85
+  });
   const bezel = new THREE.Mesh(
     new THREE.BoxGeometry(2.28, 1.42, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0x111723, metalness: 0.15, roughness: 0.85 })
+    bezelMaterialRef
   );
   bezel.position.set(0, 0.34, 0.145);
   scene.add(bezel);
 
-  const screen = new THREE.Mesh(
-    new THREE.BoxGeometry(2.08, 1.22, 0.02),
-    new THREE.MeshStandardMaterial({
-      color: 0x0a1018,
-      emissive: 0x0f1e34,
-      emissiveIntensity: 0.18,
-      metalness: 0.25,
-      roughness: 0.25
-    })
-  );
-  screen.position.set(0, 0.34, 0.185);
-  scene.add(screen);
+  const screenGroup = new THREE.Group();
+  screenGroup.position.set(0, 0.34, 0.185);
+  scene.add(screenGroup);
+
+  const textureLoader = new THREE.TextureLoader();
+  const artworkTexture = textureLoader.load("./assets/app-background.png", () => {
+    updateDeckVisualTheme();
+  });
+  artworkTexture.colorSpace = THREE.SRGBColorSpace;
+  artworkTexture.anisotropy = 8;
+
+  screenArtworkMaterialRef = new THREE.MeshBasicMaterial({
+    map: artworkTexture,
+    color: 0xffffff
+  });
+  const artwork = new THREE.Mesh(new THREE.PlaneGeometry(2.08, 1.22), screenArtworkMaterialRef);
+  artwork.position.z = -0.003;
+  screenGroup.add(artwork);
+
+  screenMaterialRef = new THREE.MeshPhysicalMaterial({
+    color: isLightTheme() ? 0xffffff : 0xeaf3ff,
+    transparent: true,
+    opacity: isLightTheme() ? 0.22 : 0.28,
+    roughness: isLightTheme() ? 0.08 : 0.12,
+    metalness: 0,
+    clearcoat: 1,
+    clearcoatRoughness: isLightTheme() ? 0.06 : 0.1,
+    reflectivity: isLightTheme() ? 0.62 : 0.52,
+    side: THREE.DoubleSide
+  });
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(2.08, 1.22), screenMaterialRef);
+  glass.position.z = 0.01;
+  screenGroup.add(glass);
 }
 
 function getControlColor(kind) {
@@ -2373,6 +3072,8 @@ function bindingDslToModelOutput(parsed) {
       return formatKeyShortcut(argsRaw);
     case "mouse_button":
       return `${formatToken(argsRaw)} Mouse`;
+    case "mouse_move":
+      return "Mouse Move";
     case "mouse_wheel":
       return formatToken(argsRaw).replace("Scroll ", "Wheel ");
     case "xinput_button":
@@ -2465,6 +3166,19 @@ function modelOutputToBindingDsl(output) {
       commandRaw: "mouse_button",
       argsRaw: button,
       argTokens: [button],
+      label: "",
+      icon: "",
+      colors: "",
+      extra: [],
+      raw: ""
+    };
+  }
+  if (stripped === "Mouse Move") {
+    return {
+      command: "mouse_move",
+      commandRaw: "mouse_move",
+      argsRaw: "MOVE",
+      argTokens: ["MOVE"],
       label: "",
       icon: "",
       colors: "",
@@ -2580,7 +3294,8 @@ function activatorsToVdfBindings(activators) {
         const dsl = step.dsl && typeof step.dsl === "object" ? step.dsl : modelOutputToBindingDsl(step.output);
         return serializeBindingDsl(dsl);
       })
-      .filter(Boolean)
+      .filter(Boolean),
+    axisBinding: activator.axisBinding ? { ...activator.axisBinding } : null
   }));
 }
 
@@ -2589,7 +3304,8 @@ function dedupeActivators(activators) {
   return activators.filter((activator) => {
     const signature = JSON.stringify({
       type: activator.type,
-      actions: activator.actions.map((step) => step.dsl?.raw || step.output)
+      actions: activator.actions.map((step) => step.dsl?.raw || step.output),
+      axisBinding: activator.axisBinding ?? null
     });
     if (seen.has(signature)) return false;
     seen.add(signature);
@@ -2835,6 +3551,8 @@ function togglePaintMode() {
   state.paintMode = !state.paintMode;
   el.paintRegionBtn.classList.toggle("active", state.paintMode);
   el.paintRegionBtn.classList.toggle("warn", state.paintMode);
+  if (state.paintMode) state.deckToolsOpen = true;
+  syncDeckToolsVisibility();
   orbitControls.enabled = !state.paintMode;
   shellPreviewFaces.clear();
   recolorShellRegions();
@@ -2920,10 +3638,11 @@ function collectShellFaces(seedFaceIndex, hitPoint) {
 function recolorShellRegions() {
   if (!shellGeometry) return;
   const colorAttr = shellGeometry.getAttribute("color");
-  const baseColor = new THREE.Color(0x2f3747);
-  const paintedColor = new THREE.Color(0xff4d4d);
-  const selectedColor = new THREE.Color(state.paintMode ? 0xff9999 : 0xff7373);
-  const previewColor = new THREE.Color(0xffa366);
+  const lightTheme = isLightTheme();
+  const baseColor = new THREE.Color(lightTheme ? 0x7f8ba3 : 0x2f3747);
+  const paintedColor = new THREE.Color(lightTheme ? 0xd83f3f : 0xff4d4d);
+  const selectedColor = new THREE.Color(lightTheme ? 0xb82222 : state.paintMode ? 0xff9999 : 0xff7373);
+  const previewColor = new THREE.Color(lightTheme ? 0xff7d4a : 0xffa366);
 
   for (let faceIndex = 0; faceIndex < shellFaceOwners.length; faceIndex += 1) {
     const owner = shellFaceOwners[faceIndex];

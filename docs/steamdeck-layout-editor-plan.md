@@ -1,5 +1,7 @@
 # Steam Deck Layout Studio — Project Plan
 
+Status audit updated on 2026-04-07. Checked items are implemented in the current repo. Unchecked items are missing, incomplete, or only partially implemented.
+
 ## 1) Product vision
 Build a **modern, visual-first layout editor** for Steam Deck control schemes where users can:
 - Design mappings quickly with drag-and-drop and contextual editing.
@@ -23,41 +25,41 @@ Design goal: “striking and intuitive” means high visual clarity, immediate f
 ## 3) Functional requirements
 
 ### A. Layout lifecycle (load/save)
-- Create new layout from templates (FPS, Racing, Desktop, Accessibility).
-- Save layout locally (JSON project format).
-- Save-as and duplicate layouts.
-- Load existing layouts from local files.
-- Import/export Steam-compatible profile formats (where feasible).
-- Autosave working draft and recovery after crash/tab close.
-- Revision history: timestamped snapshots with restore.
+- [ ] Create new layout from templates (FPS, Racing, Desktop, Accessibility).
+- [x] Save layout locally (JSON project format).
+- [ ] Save-as and duplicate layouts.
+- [x] Load existing layouts from local files.
+- [ ] Import/export Steam-compatible profile formats (where feasible).
+- [ ] Autosave working draft and recovery after crash/tab close.
+- [ ] Revision history: timestamped snapshots with restore.
 
 ### B. Visual editor (primary)
-- Steam Deck silhouette + 3D model in center canvas.
-- Click a control (button, trigger, joystick, touchpad, gyro) to edit mapping.
-- Visual connection lines from control -> assigned action (optional split panel).
-- Color coding for action types (movement, combat, menu, system, macro).
-- Drag-and-drop action assignment onto controls.
-- Multi-layer mapping (default/shift layer/action set) with clear toggles.
+- [x] Steam Deck silhouette + 3D model in center canvas.
+- [ ] Click a control (button, trigger, joystick, touchpad, gyro) to edit mapping.
+- [x] Visual connection lines from control -> assigned action (optional split panel).
+- [ ] Color coding for action types (movement, combat, menu, system, macro).
+- [ ] Drag-and-drop action assignment onto controls.
+- [ ] Multi-layer mapping (default/shift layer/action set) with clear toggles.
 
 ### C. Structured list editor (secondary)
-- Filterable table/list of all controls and mapped actions.
-- Inline edit for action, mode, sensitivity, deadzone, haptics.
-- Bulk edit (apply to selected controls).
-- Search by action name/control name.
-- Sort by unmapped, conflicts, recently modified.
+- [ ] Filterable table/list of all controls and mapped actions.
+- [ ] Inline edit for action, mode, sensitivity, deadzone, haptics.
+- [ ] Bulk edit (apply to selected controls).
+- [ ] Search by action name/control name.
+- [ ] Sort by unmapped, conflicts, recently modified.
 
 ### D. 3D render and interaction
-- Real-time 3D Steam Deck model with clickable hit zones.
-- Highlight selected control in model + synchronized row highlight in list.
-- Orbit/pan/zoom camera presets (front/back/left/right).
-- Contextual tooltips over controls.
-- Optional “live preview” mode to animate trigger pull/joystick tilt values.
+- [x] Real-time 3D Steam Deck model with clickable hit zones.
+- [x] Highlight selected control in model + synchronized row highlight in list.
+- [ ] Orbit/pan/zoom camera presets (front/back/left/right).
+- [ ] Contextual tooltips over controls.
+- [ ] Optional “live preview” mode to animate trigger pull/joystick tilt values.
 
 ### E. Validation and quality safeguards
-- Conflict detection (duplicate critical bindings, missing required actions).
-- Sensitivity/deadzone range validation.
-- Warning badges and guided fix suggestions.
-- Export readiness checklist.
+- [ ] Conflict detection (duplicate critical bindings, missing required actions).
+- [ ] Sensitivity/deadzone range validation.
+- [x] Warning badges and guided fix suggestions.
+- [ ] Export readiness checklist.
 
 ---
 
@@ -159,32 +161,32 @@ Design goal: “striking and intuitive” means high visual clarity, immediate f
 ## 9) Delivery roadmap
 
 ### Phase 0 — Discovery (1–2 weeks)
-- Validate target users (power users vs casual remappers).
-- Confirm required import/export formats.
-- Produce UX flows + wireframes + interaction prototype.
+- [ ] Validate target users (power users vs casual remappers).
+- [ ] Confirm required import/export formats.
+- [ ] Produce UX flows + wireframes + interaction prototype.
 
 ### Phase 1 — MVP editor (4–6 weeks)
-- Project create/load/save.
-- Core 3D model rendering + selectable controls.
-- Basic binding editor (visual + list sync).
-- JSON schema + validation + export.
+- [x] Project create/load/save.
+- [x] Core 3D model rendering + selectable controls.
+- [x] Basic binding editor (visual + list sync).
+- [ ] JSON schema + validation + export.
 
 ### Phase 2 — Advanced editing (3–5 weeks)
-- Multi-layer/action-set support.
-- Conflict detection + resolution assistant.
-- Bulk edit tools and richer property inspector.
-- Undo/redo and history snapshots.
+- [ ] Multi-layer/action-set support.
+- [ ] Conflict detection + resolution assistant.
+- [ ] Bulk edit tools and richer property inspector.
+- [ ] Undo/redo and history snapshots.
 
 ### Phase 3 — Polish + production readiness (3–4 weeks)
-- Performance tuning and memory optimization.
-- Accessibility pass + keyboard-first workflows.
-- Error tracking, telemetry, docs, onboarding.
-- Beta release with feedback loop.
+- [ ] Performance tuning and memory optimization.
+- [ ] Accessibility pass + keyboard-first workflows.
+- [ ] Error tracking, telemetry, docs, onboarding.
+- [ ] Beta release with feedback loop.
 
 ### Phase 4 — Expansion (optional)
-- Cloud sync and account system.
-- Community template sharing.
-- Plugin API for game-specific presets.
+- [ ] Cloud sync and account system.
+- [ ] Community template sharing.
+- [ ] Plugin API for game-specific presets.
 
 ---
 
@@ -205,9 +207,9 @@ Design goal: “striking and intuitive” means high visual clarity, immediate f
 ---
 
 ## 12) Immediate next actions (execution checklist)
-1. Finalize product requirements doc from this plan.
-2. Build clickable UX prototype (Figma or web prototype).
-3. Implement layout schema package and sample templates.
-4. Stand up React + R3F editor shell with dummy controls.
-5. Add bidirectional sync between 3D selection and list row selection.
-6. Ship MVP with local save/load and validation warnings.
+- [ ] Finalize product requirements doc from this plan.
+- [ ] Build clickable UX prototype (Figma or web prototype).
+- [ ] Implement layout schema package and sample templates.
+- [ ] Stand up React + R3F editor shell with dummy controls.
+- [x] Add bidirectional sync between 3D selection and list row selection.
+- [ ] Ship MVP with local save/load and validation warnings.
