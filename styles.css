@@ -19,6 +19,13 @@
   --dialog-bg: rgba(5, 9, 23, 0.88);
   --column-bg: rgba(24, 39, 68, 0.62);
   --field-bg: #0d1732;
+  --editor-field-bg: #0d1732;
+  --editor-tabs-bg: linear-gradient(180deg, rgba(9, 18, 37, 0.92), rgba(8, 16, 33, 0.9));
+  --editor-tab-active-bg: linear-gradient(180deg, rgba(67, 124, 199, 0.42), rgba(28, 72, 130, 0.52));
+  --editor-tab-active-text: #e8f7ff;
+  --editor-chip-bg: rgba(28, 72, 130, 0.38);
+  --editor-chip-border: rgba(98, 216, 255, 0.65);
+  --editor-chip-text: #e8f7ff;
   --row-bg: #13213b;
   --step-bg: #0f1a31;
   --step-bg-active: #11203a;
@@ -55,6 +62,13 @@ html[data-theme="light"] {
   --dialog-bg: rgba(249, 251, 255, 0.94);
   --column-bg: rgba(247, 249, 253, 0.88);
   --field-bg: #f4f8fd;
+  --editor-field-bg: #f4f8fd;
+  --editor-tabs-bg: linear-gradient(180deg, rgba(247, 250, 255, 0.98), rgba(232, 239, 248, 0.96));
+  --editor-tab-active-bg: linear-gradient(180deg, rgba(192, 214, 242, 0.8), rgba(152, 189, 231, 0.84));
+  --editor-tab-active-text: #12304d;
+  --editor-chip-bg: rgba(171, 202, 233, 0.42);
+  --editor-chip-border: rgba(18, 105, 173, 0.5);
+  --editor-chip-text: #12304d;
   --row-bg: #edf3fb;
   --step-bg: #edf3fb;
   --step-bg-active: #e1ebf9;
@@ -590,7 +604,7 @@ button.primary {
   padding: 0.22rem;
   border: 1px solid rgba(120, 164, 225, 0.32);
   border-radius: 10px;
-  background: linear-gradient(180deg, rgba(9, 18, 37, 0.92), rgba(8, 16, 33, 0.9));
+  background: var(--editor-tabs-bg);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -606,9 +620,9 @@ button.primary {
 }
 
 .input-mode-tabs button.active {
-  color: #e8f7ff;
+  color: var(--editor-tab-active-text);
   border-color: rgba(98, 216, 255, 0.75);
-  background: linear-gradient(180deg, rgba(67, 124, 199, 0.42), rgba(28, 72, 130, 0.52));
+  background: var(--editor-tab-active-bg);
   box-shadow: 0 0 0 1px rgba(98, 216, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
@@ -625,7 +639,7 @@ button.primary {
   align-items: center;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #0d1732;
+  background: var(--editor-field-bg);
   padding: 0.34rem;
 }
 
@@ -642,12 +656,12 @@ button.primary {
 }
 
 .pressed-mod-chip {
-  border: 1px solid rgba(98, 216, 255, 0.65);
+  border: 1px solid var(--editor-chip-border);
   border-radius: 6px;
   padding: 0.18rem 0.34rem;
   font-size: 0.68rem;
-  color: #e8f7ff;
-  background: rgba(28, 72, 130, 0.38);
+  color: var(--editor-chip-text);
+  background: var(--editor-chip-bg);
   line-height: 1;
 }
 
