@@ -861,6 +861,7 @@ function renderBindings() {
     const summaryCell = fragment.querySelector(".binding-summary");
     const editBtn = fragment.querySelector(".binding-edit-btn");
 
+    tr.dataset.controlId = control.id;
     nameCell.textContent = control.name;
     summaryCell.textContent = formatBindingSummary(control.id);
 
@@ -879,6 +880,7 @@ function renderBindings() {
     el.bindingsTable.appendChild(fragment);
   });
   renderValidationSummary();
+  scheduleScrollSelectedBindingRow();
   schedulePersistCurrentLayoutState();
 }
 
@@ -907,7 +909,20 @@ function selectControl(controlId) {
   updateSelectionInfo();
   recolorShellRegions();
   focusSelectedControl();
+  scheduleScrollSelectedBindingRow();
   if (state.bindingEditorOpen) renderBindingEditor();
+}
+
+function scheduleScrollSelectedBindingRow() {
+  if (!state.selectedControlId) return;
+  if (scheduleScrollSelectedBindingRow.rafId) {
+    cancelAnimationFrame(scheduleScrollSelectedBindingRow.rafId);
+  }
+  scheduleScrollSelectedBindingRow.rafId = requestAnimationFrame(() => {
+    scheduleScrollSelectedBindingRow.rafId = 0;
+    const row = el.bindingsTable.querySelector(`tr[data-control-id="${CSS.escape(state.selectedControlId)}"]`);
+    row?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+  });
 }
 
 function showCommunityDialog() {
