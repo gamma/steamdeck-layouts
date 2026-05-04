@@ -57,6 +57,7 @@ const state = {
   bindingEditorOpen: false,
   bindingEditorAdvancedOpen: false,
   bindingEditorAxisSlot: "click",
+  layoutPersistenceReady: false,
   communityDialogOpen: false,
   bindings: Object.fromEntries(controls.map((c) => [c.id, []]))
 };
@@ -90,6 +91,7 @@ const ACTIVATOR_TYPES = [
 ];
 const MODIFIER_TOKENS = ["Ctrl", "Shift", "Alt", "Meta"];
 const THEME_STORAGE_KEY = "steamdeck-layout-theme";
+const DRAFT_STORAGE_KEY = "steamdeck-layout-draft";
 const themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const el = {
@@ -125,6 +127,7 @@ const el = {
   newLayoutBtn: document.getElementById("newLayoutBtn"),
   debugMapBtn: document.getElementById("debugMapBtn"),
   saveLayoutBtn: document.getElementById("saveLayoutBtn"),
+  exportVdfBtn: document.getElementById("exportVdfBtn"),
   loadLayoutBtn: document.getElementById("loadLayoutBtn"),
   themeAutoBtn: document.getElementById("themeAutoBtn"),
   themeLightBtn: document.getElementById("themeLightBtn"),
@@ -230,10 +233,8 @@ let lightRefs = null;
 initTheme();
 initUI();
 initScene();
-renderBindings();
-updateSelectionInfo();
-loadDefaultLayout();
 initBindingEditor();
+void bootstrapApp();
 
 function initUI() {
   el.openCommunityBtn.addEventListener("click", showCommunityDialog);
@@ -311,6 +312,7 @@ function initUI() {
   el.debugMapBtn.addEventListener("click", applyDebugBindings);
 
   el.saveLayoutBtn.addEventListener("click", saveLayoutToStorage);
+  el.exportVdfBtn.addEventListener("click", exportCurrentLayoutVdf);
   el.loadLayoutBtn.addEventListener("click", loadLayoutFromStorage);
   el.themeAutoBtn.addEventListener("click", () => setThemeMode("auto"));
   el.themeLightBtn.addEventListener("click", () => setThemeMode("light"));
@@ -331,6 +333,15 @@ function initUI() {
   });
   el.paintBrushSizeValue.value = String(state.paintBrushSize);
   syncDeckToolsVisibility();
+}
+
+async function bootstrapApp() {
+  const restored = restorePersistedLayoutState();
+  if (!restored) {
+    await loadDefaultLayout();
+  }
+  state.layoutPersistenceReady = true;
+  schedulePersistCurrentLayoutState();
 }
 
 function initTheme() {
@@ -494,6 +505,7 @@ function applyLayoutData(json, requireBindings = true) {
   }
   applyPendingPaintRegions();
   updateCommunitySummary();
+  schedulePersistCurrentLayoutState();
 }
 
 async function loadDefaultLayout() {
@@ -506,6 +518,28 @@ async function loadDefaultLayout() {
     updateSelectionInfo();
   } catch {
     // Keep the app usable even if the default checkpoint is missing.
+  }
+}
+
+function restorePersistedLayoutState() {
+  try {
+    const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!stored) return false;
+    const payload = JSON.parse(stored);
+    const layoutPayload = payload?.payload ?? payload;
+    if (!layoutPayload || typeof layoutPayload !== "object") return false;
+    applyLayoutData(layoutPayload, false);
+    if (typeof payload?.ui?.selectedControlId === "string" && getControlById(payload.ui.selectedControlId)) {
+      state.selectedControlId = payload.ui.selectedControlId;
+      state.selectedActivatorIndex = clampNumber(payload.ui.selectedActivatorIndex, 0, 99, 0);
+    }
+    renderBindings();
+    updateSelectionInfo();
+    renderBindingOverlays();
+    setLayoutStatus("Restored local draft from browser storage.", false);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -845,6 +879,7 @@ function renderBindings() {
     el.bindingsTable.appendChild(fragment);
   });
   renderValidationSummary();
+  schedulePersistCurrentLayoutState();
 }
 
 function updateSelectionInfo() {
@@ -2099,8 +2134,38 @@ function buildLayoutPayload() {
   };
 }
 
+function schedulePersistCurrentLayoutState() {
+  if (!state.layoutPersistenceReady) return;
+  if (schedulePersistCurrentLayoutState.timer) {
+    clearTimeout(schedulePersistCurrentLayoutState.timer);
+  }
+  schedulePersistCurrentLayoutState.timer = setTimeout(() => {
+    schedulePersistCurrentLayoutState.timer = null;
+    persistCurrentLayoutState();
+  }, 250);
+}
+
+function persistCurrentLayoutState() {
+  if (!state.layoutPersistenceReady) return;
+  try {
+    const payload = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      payload: buildLayoutPayload(),
+      ui: {
+        selectedControlId: state.selectedControlId,
+        selectedActivatorIndex: state.selectedActivatorIndex
+      }
+    };
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore browser storage failures.
+  }
+}
+
 async function saveLayoutToStorage() {
   const payload = buildLayoutPayload();
+  persistCurrentLayoutState();
   const text = JSON.stringify(payload, null, 2);
   const validation = getValidationReport();
   const savedMessageSuffix = validation.warnings.length
@@ -2133,6 +2198,198 @@ async function saveLayoutToStorage() {
     URL.revokeObjectURL(a.href);
     setLayoutStatus(`Layout downloaded locally.${savedMessageSuffix}`, false);
   }
+}
+
+function buildVdfExportText() {
+  const layout = buildVdfLayoutObject();
+  return serializeVdfTree(layout);
+}
+
+function buildVdfLayoutObject() {
+  return {
+    controller_mappings: {
+      version: "1",
+      preset: {
+        group_source_bindings: Object.fromEntries(
+          controls
+            .map((control) => {
+              const descriptor = getVdfSourceDescriptorForControl(control);
+              return descriptor ? [control.id, `${descriptor.source} active`] : null;
+            })
+            .filter(Boolean)
+        )
+      },
+      group: controls.map((control) => buildVdfGroupForControl(control))
+    }
+  };
+}
+
+function buildVdfGroupForControl(control) {
+  const descriptor = getVdfSourceDescriptorForControl(control);
+  const activators = getControlActivators(control.id);
+  if (!descriptor) {
+    return {
+      id: control.id,
+      inputs: {}
+    };
+  }
+
+  const inputName = descriptor.inputName;
+  const inputNode = buildVdfInputNodeSet(activators);
+  const inputs = inputName ? { [inputName]: inputNode } : {};
+
+  const group = {
+    id: control.id,
+    source: descriptor.source,
+    inputs
+  };
+  const firstAxisBinding = activators.find((activator) => activator.axisBinding)?.axisBinding;
+  if (firstAxisBinding) group.axisBinding = { ...firstAxisBinding };
+  return group;
+}
+
+function buildVdfInputNodeSet(activators) {
+  const node = { activators: {} };
+  activators.forEach((activator, index) => {
+    const bindingStrings = activator.actions
+      .map((step) => {
+        const dsl = step.dsl && typeof step.dsl === "object" ? step.dsl : modelOutputToBindingDsl(step.output);
+        return serializeBindingDsl(dsl);
+      })
+      .filter(Boolean);
+    if (!bindingStrings.length && activator.axisBinding) {
+      bindingStrings.push(...axisBindingToBindingStrings(activator.axisBinding));
+    }
+    node.activators[`${mapInternalTypeToVdfActivatorKey(activator.type)}_${index}`] = {
+      bindings: {
+        binding: bindingStrings
+      }
+    };
+    if (activator.axisBinding) {
+      node.activators[`${mapInternalTypeToVdfActivatorKey(activator.type)}_${index}`].axisBinding = { ...activator.axisBinding };
+    }
+  });
+  return node;
+}
+
+function axisBindingToBindingStrings(axisBinding) {
+  if (!axisBinding || typeof axisBinding !== "object") return [];
+  const values = [];
+  const slotMap = [
+    ["click", axisBinding.click],
+    ["move", axisBinding.move],
+    ["up", axisBinding.up],
+    ["down", axisBinding.down],
+    ["left", axisBinding.left],
+    ["right", axisBinding.right]
+  ];
+  for (const [slot, output] of slotMap) {
+    if (!output) continue;
+    if (slot === "move") {
+      values.push(serializeBindingDsl(modelOutputToBindingDsl(output === "Mouse Move" ? output : "Mouse Move")));
+    } else {
+      values.push(serializeBindingDsl(modelOutputToBindingDsl(output)));
+    }
+  }
+  return values;
+}
+
+function getVdfSourceDescriptorForControl(control) {
+  switch (control.kind) {
+    case "face": {
+      const map = { a: "button_a", b: "button_b", x: "button_x", y: "button_y" };
+      const inputName = map[control.id];
+      return inputName ? { source: "button_diamond", inputName } : null;
+    }
+    case "dpad": {
+      const map = {
+        dpad_up: "dpad_north",
+        dpad_down: "dpad_south",
+        dpad_left: "dpad_west",
+        dpad_right: "dpad_east"
+      };
+      const inputName = map[control.id];
+      return inputName ? { source: "dpad", inputName } : null;
+    }
+    case "stick": {
+      const source = control.id === "right_stick" ? "right_joystick" : "joystick";
+      return { source, inputName: "click" };
+    }
+    case "pad": {
+      const source = control.id === "left_pad" ? "left_trackpad" : "right_trackpad";
+      return { source, inputName: "click" };
+    }
+    case "trigger":
+      return { source: control.id === "left_trigger" ? "left_trigger" : "right_trigger", inputName: "edge" };
+    case "bumper": {
+      const map = { left_bumper: "left_bumper", right_bumper: "right_bumper" };
+      const inputName = map[control.id];
+      return inputName ? { source: "switch", inputName } : null;
+    }
+    case "utility": {
+      const map = {
+        view: "button_escape",
+        menu: "button_menu",
+        steam: "button_steam",
+        quick_access: "button_capture"
+      };
+      const inputName = map[control.id];
+      return inputName ? { source: "switch", inputName } : null;
+    }
+    case "rear": {
+      const map = {
+        left_grip_4: "button_back_left_upper",
+        left_grip_5: "button_back_left_lower",
+        right_grip_4: "button_back_right_upper",
+        right_grip_5: "button_back_right_lower"
+      };
+      const inputName = map[control.id];
+      return inputName ? { source: "switch", inputName } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function serializeVdfTree(value) {
+  return serializeVdfNode(value, 0);
+}
+
+function serializeVdfNode(value, depth, key = null) {
+  const indent = "  ".repeat(depth);
+  if (Array.isArray(value)) {
+    return value.map((item) => serializeVdfNode(item, depth, key)).filter(Boolean).join("\n");
+  }
+  if (value && typeof value === "object") {
+    if (key == null) {
+      return Object.entries(value)
+        .map(([childKey, childValue]) => serializeVdfNode(childValue, depth, childKey))
+        .filter(Boolean)
+        .join("\n");
+    }
+    const entries = Object.entries(value)
+      .map(([childKey, childValue]) => serializeVdfNode(childValue, depth + 1, childKey))
+      .filter(Boolean)
+      .join("\n");
+    return `${indent}"${escapeVdfString(key)}"\n${indent}{\n${entries}\n${indent}}`;
+  }
+  if (key == null) return "";
+  return `${indent}"${escapeVdfString(key)}" "${escapeVdfString(value == null ? "" : String(value))}"`;
+}
+
+function escapeVdfString(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
+}
+
+function exportCurrentLayoutVdf() {
+  const text = buildVdfExportText();
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "steamdeck-layout.vdf";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setLayoutStatus("Exported current layout as VDF.", false);
 }
 
 async function loadLayoutFromStorage() {
@@ -2970,6 +3227,7 @@ function mapInputToActivators(input, options = {}) {
     next.type = internalType;
     next.actions = actions;
     next.binding = actions[0]?.output ?? "";
+    next.axisBinding = extractAxisBindingFromActivatorNode(activatorNode);
     mapped.push(sanitizeActivator(next, index));
   });
 
@@ -2982,8 +3240,13 @@ function extractBindingStringsFromActivatorNode(node) {
   return values.filter((entry) => typeof entry === "string" && entry.trim());
 }
 
+function extractAxisBindingFromActivatorNode(node) {
+  if (!node || typeof node !== "object" || !node.axisBinding || typeof node.axisBinding !== "object") return null;
+  return sanitizeAxisBinding(node.axisBinding);
+}
+
 function mapVdfActivatorKeyToInternalType(key) {
-  const normalized = String(key ?? "").trim();
+  const normalized = String(key ?? "").trim().replace(/_\d+$/, "");
   switch (normalized) {
     case "Double_Press":
       return "double_press";
