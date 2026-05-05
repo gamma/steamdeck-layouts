@@ -528,6 +528,9 @@ function restorePersistedLayoutState() {
     const payload = JSON.parse(stored);
     const layoutPayload = payload?.payload ?? payload;
     if (!layoutPayload || typeof layoutPayload !== "object") return false;
+    if (typeof payload?.ui?.themeMode === "string") {
+      applyThemeMode(payload.ui.themeMode, false);
+    }
     applyLayoutData(layoutPayload, false);
     if (typeof payload?.ui?.selectedControlId === "string" && getControlById(payload.ui.selectedControlId)) {
       state.selectedControlId = payload.ui.selectedControlId;
@@ -2169,7 +2172,8 @@ function persistCurrentLayoutState() {
       payload: buildLayoutPayload(),
       ui: {
         selectedControlId: state.selectedControlId,
-        selectedActivatorIndex: state.selectedActivatorIndex
+        selectedActivatorIndex: state.selectedActivatorIndex,
+        themeMode: state.themeMode
       }
     };
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
@@ -2516,9 +2520,10 @@ function initScene() {
   });
 
   window.addEventListener("pointerup", () => {
-    if (!isPainting) return;
-    isPainting = false;
-    orbitControls.enabled = !state.paintMode;
+    if (isPainting) {
+      isPainting = false;
+      orbitControls.enabled = !state.paintMode;
+    }
   });
 
   renderer.domElement.addEventListener("click", (event) => {
@@ -2601,12 +2606,14 @@ function loadDeckModel(deckRoot) {
       const mesh = new THREE.Mesh(geometry, material);
       shellMesh = mesh;
       deckRoot.add(mesh);
+      updateDeckVisualTheme();
       applyPendingPaintRegions();
       setDeckStatus("Steam Deck shell model loaded.");
     },
     undefined,
     () => {
       deckRoot.add(createFallbackDeckBody());
+      updateDeckVisualTheme();
       setDeckStatus("Steam Deck shell model failed to load. Showing fallback body.", true);
     }
   );
@@ -2716,7 +2723,7 @@ function renderBindingOverlays() {
         : "";
       return { control, summary, projected, shortSummary, normalDir };
     })
-    .filter((entry) => entry.projected.visible);
+    .filter((entry) => entry.projected.visible && entry.summary.length);
 
   if (!visibleControls.length) {
     el.bindingTags.innerHTML = "";
@@ -2734,11 +2741,10 @@ function renderBindingOverlays() {
     const pointX = entry.projected.x * el.deckContainer.clientWidth;
     const pointY = entry.projected.y * el.deckContainer.clientHeight;
     const selected = state.selectedControlId === entry.control.id;
-    const unmapped = !entry.summary.length;
     if (selected) selectedEntry = entry;
     lineParts.push(
-      `<polyline class="binding-line${selected ? " selected" : ""}${unmapped ? " unmapped" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
-      `<circle class="binding-bubble${selected ? " selected" : ""}${unmapped ? " unmapped" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
+      `<polyline class="binding-line${selected ? " selected" : ""}" points="${pointX},${pointY} ${entry.elbowX},${entry.elbowY} ${entry.anchorX},${entry.anchorY}"></polyline>`,
+      `<circle class="binding-bubble${selected ? " selected" : ""}" cx="${entry.anchorX}" cy="${entry.anchorY}" r="${selected ? 5 : 3.6}"></circle>`
     );
   }
   el.bindingLines.innerHTML = lineParts.join("");
