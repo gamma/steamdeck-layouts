@@ -72,6 +72,8 @@ test("describes activators with Steam labels and qualifiers", () => {
   assert.equal(describeActivator(base.bindings.a[1]), "Long Press: Ctrl");
   assert.equal(describeActivator(base.bindings.left_stick[0]), "Up: W");
   assert.equal(describeActivator(base.bindings.right_stick[0]), "Mode Shift · Up: 1");
+  assert.equal(describeActivator(base.bindings.right_trigger[0]), "Full Pull: Left Mouse");
+  assert.equal(describeActivator(base.bindings.right_trigger[1], { presetNames: { 1: "Aiming" } }), "Soft Pull: Aim (Hold Layer: Aiming)");
   assert.deepEqual(describeControl(base.bindings.right_pad, base.modes.right_pad), ["Mode: Mouse", "Click · Soft Press: Left Mouse"]);
   const overview = describeLayoutOverview(base, CONTROLS);
   assert.match(overview, /Gyro: Gyro To Mouse\./);

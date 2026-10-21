@@ -19,7 +19,8 @@ $config = array_merge(
 );
 
 const USER_AGENT = 'steamdeck-layouts/1.0';
-const ALLOWED_HOSTS = ['store.steampowered.com', 'www.steaminputdb.com', 'cdn.steamusercontent.com'];
+const ALLOWED_HOSTS = ['store.steampowered.com', 'api.steampowered.com', 'www.steaminputdb.com', 'cdn.steamusercontent.com'];
+const FILE_DETAILS_URL = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/';
 const SORT_VALUES = ['vote', 'publication', 'trend', 'text_search'];
 
 sendCorsHeaders($config['allowed_origins']);
@@ -69,6 +70,14 @@ switch ($endpoint) {
         relay($upstream, 'text/plain; charset=utf-8', 1800, $config);
         break;
 
+    case 'file-details':
+        // Keyless Steam Web API call; resolves a shared layout id to its file.
+        $id = param('id');
+        if (!preg_match('/^\d{1,20}$/', $id)) fail(400, 'Invalid id');
+        $form = http_build_query(['itemcount' => 1, 'publishedfileids[0]' => $id]);
+        relay(FILE_DETAILS_URL, 'application/json; charset=utf-8', 3600, $config, $form);
+        break;
+
     case 'layout-file':
         $url = param('url');
         $parts = parse_url($url);
@@ -114,14 +123,14 @@ function sendCorsHeaders(array $allowedOrigins): void
     }
 }
 
-function relay(string $url, string $contentType, int $ttl, array $config): never
+function relay(string $url, string $contentType, int $ttl, array $config, ?string $form = null): never
 {
-    $cacheFile = rtrim($config['cache_dir'], '/') . '/' . hash('sha256', $url) . '.cache';
+    $cacheFile = rtrim($config['cache_dir'], '/') . '/' . hash('sha256', $url . "\n" . ($form ?? '')) . '.cache';
     $body = readCache($cacheFile, $ttl);
     $cacheState = 'HIT';
     if ($body === null) {
         $cacheState = 'MISS';
-        $body = fetchUpstream($url, $config);
+        $body = fetchUpstream($url, $config, $form);
         writeCache($cacheFile, $body);
     }
 
@@ -151,7 +160,7 @@ function writeCache(string $file, string $body): void
 }
 
 /** Follows at most three redirects, each re-checked against the host allowlist. */
-function fetchUpstream(string $url, array $config): string
+function fetchUpstream(string $url, array $config, ?string $form = null): string
 {
     for ($redirects = 0; $redirects <= 3; $redirects++) {
         $host = parse_url($url, PHP_URL_HOST);
@@ -179,6 +188,9 @@ function fetchUpstream(string $url, array $config): string
                 return strlen($chunk);
             },
         ]);
+        if ($form !== null) {
+            curl_setopt($handle, CURLOPT_POSTFIELDS, $form);
+        }
         $ok = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $location = curl_getinfo($handle, CURLINFO_REDIRECT_URL);

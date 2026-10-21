@@ -11,7 +11,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const USER_AGENT = "steamdeck-layouts/1.0";
 const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED_HOSTS = new Set(["store.steampowered.com", "www.steaminputdb.com", "cdn.steamusercontent.com"]);
+const ALLOWED_HOSTS = new Set(["store.steampowered.com", "api.steampowered.com", "www.steaminputdb.com", "cdn.steamusercontent.com"]);
+const FILE_DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
 const SORT_VALUES = new Set(["vote", "publication", "trend", "text_search"]);
 
 const MIME_TYPES = {
@@ -39,8 +40,8 @@ http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
     if (requestUrl.pathname === "/api") {
-      const { url, contentType } = resolveUpstream(requestUrl.searchParams);
-      const body = await fetchUpstream(url);
+      const { url, contentType, form } = resolveUpstream(requestUrl.searchParams);
+      const body = await fetchUpstream(url, form);
       res.writeHead(200, {
         "Content-Type": contentType,
         "Cache-Control": "no-store",
@@ -91,6 +92,16 @@ function resolveUpstream(params) {
       }
       return { url: url.toString(), contentType: "text/plain; charset=utf-8" };
     }
+    case "file-details": {
+      // Keyless Steam Web API call; resolves a shared layout id to its file.
+      const id = param("id");
+      if (!/^\d{1,20}$/.test(id)) throw new HttpError(400, "Invalid id");
+      return {
+        url: FILE_DETAILS_URL,
+        contentType: "application/json; charset=utf-8",
+        form: new URLSearchParams({ itemcount: "1", "publishedfileids[0]": id }).toString()
+      };
+    }
     case "layout-file": {
       let url;
       try {
@@ -109,7 +120,7 @@ function resolveUpstream(params) {
 }
 
 // Follows at most three redirects, each re-checked against the host allowlist.
-async function fetchUpstream(initialUrl) {
+async function fetchUpstream(initialUrl, form = null) {
   let url = initialUrl;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
     const parsed = new URL(url);
@@ -119,7 +130,11 @@ async function fetchUpstream(initialUrl) {
     let response;
     try {
       response = await fetch(url, {
-        headers: { "User-Agent": USER_AGENT },
+        method: form ? "POST" : "GET",
+        headers: form
+          ? { "User-Agent": USER_AGENT, "Content-Type": "application/x-www-form-urlencoded" }
+          : { "User-Agent": USER_AGENT },
+        body: form ?? undefined,
         redirect: "manual",
         signal: AbortSignal.timeout(TIMEOUT_MS)
       });

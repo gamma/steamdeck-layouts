@@ -725,6 +725,12 @@ button.primary {
   border-color: transparent;
 }
 
+/* The field itself has no outline, so the composer shows keyboard focus. */
+.input-composer:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .input-composer #bindingEditorClearInputBtn {
   width: 28px;
   height: 28px;
@@ -1144,48 +1150,13 @@ button.primary {
   color: var(--danger);
 }
 
-.community-search,
 .community-filters {
   display: grid;
   gap: 0.6rem;
 }
 
-.community-search input,
 .community-filters input {
   width: 100%;
-}
-
-.filter-row,
-.filter-actions {
-  display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.filter-row label {
-  display: grid;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.filter-row span {
-  padding-left: 0.1rem;
-}
-
-.list-block {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.list-block h3 {
-  margin: 0 0 0.45rem;
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
 }
 
 .result-list {
@@ -1563,5 +1534,220 @@ tr.selected td {
   .deck-tools-panel {
     width: min(320px, calc(100vw - 3rem));
     right: 0;
+  }
+}
+
+/* Viewer: action sets, overview, cheat sheet and comparison */
+.bindings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.preset-select {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.preset-select[hidden],
+#copyLayoutLinkBtn[hidden] {
+  display: none;
+}
+
+.layout-overview {
+  margin: 0.6rem 0;
+  line-height: 1.45;
+}
+
+.layout-overview:empty,
+.app-status:empty {
+  display: none;
+}
+
+.app-status {
+  font-size: 0.85rem;
+}
+
+.app-status.error {
+  color: var(--danger);
+}
+
+.layout-detail-actions,
+.dialog-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cheat-sheet-dialog,
+.compare-dialog {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  width: min(1100px, 92vw);
+  max-height: 90vh;
+  padding: 1.2rem;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  overflow: auto;
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
+}
+
+.cheat-sheet-dialog header,
+.compare-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.cheat-sheet-overview {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cheat-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.cheat-sheet-grid section {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: var(--column-bg);
+}
+
+.cheat-sheet-grid h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.cheat-sheet-grid dl {
+  margin: 0;
+}
+
+.cheat-sheet-grid dt {
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.cheat-sheet-grid dd {
+  margin: 0.1rem 0 0 0.8rem;
+}
+
+.compare-pickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.compare-pickers label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.compare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.compare-item {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.6fr) 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--panel-border);
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: var(--column-bg);
+}
+
+.compare-item.added {
+  border-left-color: var(--accent);
+}
+
+.compare-item.removed {
+  border-left-color: var(--danger);
+}
+
+.compare-item.changed {
+  border-left-color: var(--accent-2);
+}
+
+.compare-caption {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .compare-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  body > *:not(#cheatSheetBackdrop) {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000;
+  }
+
+  #cheatSheetBackdrop {
+    position: static;
+    background: none;
+    display: block;
+  }
+
+  .cheat-sheet-dialog {
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+    backdrop-filter: none;
+  }
+
+  .cheat-sheet-dialog .dialog-header-actions {
+    display: none;
+  }
+
+  .cheat-sheet-overview {
+    color: #333;
+  }
+
+  .cheat-sheet-grid section {
+    background: none;
+    border-color: #999;
+    break-inside: avoid;
+  }
+
+  .cheat-sheet-grid h3 {
+    color: #333;
   }
 }

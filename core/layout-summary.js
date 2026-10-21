@@ -22,8 +22,13 @@ export function describeStep(step, presetNames = {}) {
 export function describeActivator(activator, options = {}) {
   const qualifiers = [];
   if (activator.modeshift) qualifiers.push("Mode Shift");
-  if (activator.input) qualifiers.push(INPUT_LABELS[activator.input] ?? activator.input);
-  if (activator.type && activator.type !== "regular_press") qualifiers.push(TYPE_LABELS[activator.type] ?? activator.type);
+  if (activator.input === "edge" && (activator.type === "regular_press" || activator.type === "soft_press")) {
+    // Steam names the two trigger thresholds "Full Pull" and "Soft Pull".
+    qualifiers.push(activator.type === "soft_press" ? "Soft Pull" : "Full Pull");
+  } else {
+    if (activator.input) qualifiers.push(INPUT_LABELS[activator.input] ?? activator.input);
+    if (activator.type && activator.type !== "regular_press") qualifiers.push(TYPE_LABELS[activator.type] ?? activator.type);
+  }
   const steps = activator.actions.map((step) => {
     const text = describeStep(step, options.presetNames);
     return step.delayMs > 0 ? `${text} (+${step.delayMs}ms)` : text;

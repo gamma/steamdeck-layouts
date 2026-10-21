@@ -3,27 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Steam Deck Layout Studio (MVP)</title>
+    <title>Steam Deck Layout Studio</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
         <h1>Steam Deck Layout Studio</h1>
-        <p class="sub">Visual-first layout editor (MVP)</p>
+        <p class="sub">See what a Steam Deck layout does before you install it</p>
       </div>
       <div class="actions">
-        <button id="newLayoutBtn">New</button>
-        <button id="debugMapBtn">Map All (Debug)</button>
-        <button id="loadLayoutBtn">Load JSON</button>
-        <button id="saveLayoutBtn" class="primary">Save JSON</button>
+        <button id="newLayoutBtn" type="button">New</button>
+        <button id="debugMapBtn" type="button">Map All (Debug)</button>
+        <button id="loadLayoutBtn" type="button" title="Open a layout JSON or Steam Input VDF">Open…</button>
+        <button id="saveLayoutBtn" type="button" class="primary">Save JSON</button>
         <button id="exportVdfBtn" type="button">Export VDF</button>
+        <button id="cheatSheetBtn" type="button">Cheat Sheet</button>
+        <button id="compareBtn" type="button">Compare</button>
         <div class="theme-switcher" role="group" aria-label="Theme">
           <button id="themeAutoBtn" type="button" class="theme-btn">Auto</button>
           <button id="themeLightBtn" type="button" class="theme-btn">Light</button>
           <button id="themeDarkBtn" type="button" class="theme-btn">Dark</button>
         </div>
-        <input id="fileInput" type="file" accept="application/json" hidden />
+        <input id="fileInput" type="file" accept=".json,.vdf,application/json,text/plain" hidden />
       </div>
     </header>
 
@@ -34,7 +36,10 @@
           <p class="muted">Click below to open the community layout browser.</p>
           <button id="openCommunityBtn" class="primary" type="button">Browse Community Layouts</button>
           <div id="currentCommunitySummary" class="selection">No layout loaded yet.</div>
-          <p class="muted">Use the deck view to drag &amp; drop `.json` files or use the Save/Load buttons in the header.</p>
+          <button id="copyLayoutLinkBtn" type="button" hidden>Copy share link</button>
+          <p id="layoutOverview" class="layout-overview"></p>
+          <p id="appStatus" class="app-status muted" role="status" aria-live="polite"></p>
+          <p class="muted">Drop a layout JSON or Steam Input <code>.vdf</code> onto the deck view, or use Open… in the header.</p>
         </section>
         <section class="validation-panel" aria-labelledby="validationPanelTitle">
           <div class="validation-header">
@@ -84,7 +89,13 @@
       </section>
 
       <section class="panel right">
-        <h2>Control Bindings</h2>
+        <div class="bindings-header">
+          <h2>Control Bindings</h2>
+          <label id="presetSelectLabel" class="preset-select" hidden>
+            <span>Action set</span>
+            <select id="presetSelect"></select>
+          </label>
+        </div>
         <div id="selectionInfo" class="selection">No control selected</div>
         <div class="bindings-scroll">
           <table>
@@ -102,10 +113,10 @@
     </main>
 
     <div id="communityDialogBackdrop" class="dialog-backdrop hidden">
-      <div class="community-dialog">
+      <div class="community-dialog" role="dialog" aria-modal="true" aria-labelledby="communityDialogTitle">
         <header>
-          <h2>Community Layout Browser</h2>
-          <button id="communityDialogCloseBtn" type="button">&times;</button>
+          <h2 id="communityDialogTitle">Community Layout Browser</h2>
+          <button id="communityDialogCloseBtn" type="button" aria-label="Close">&times;</button>
         </header>
         <div class="community-grid">
           <div class="community-column community-games">
@@ -140,21 +151,24 @@
               <div id="layoutDetailMeta" class="muted"></div>
               <p id="layoutDetailDescription"></p>
               <div id="layoutDetailTags" class="tag-list"></div>
-              <button id="dialogLoadLayoutBtn" type="button" class="primary" disabled>Load Layout</button>
+              <div class="layout-detail-actions">
+                <button id="dialogLoadLayoutBtn" type="button" class="primary" disabled>Load Layout</button>
+                <button id="dialogCompareLayoutBtn" type="button" disabled>Compare with current</button>
+              </div>
             </div>
           </div>
         </div>
-        <footer id="layoutStatus" class="muted">Search for a game to start.</footer>
+        <footer id="layoutStatus" class="muted" role="status" aria-live="polite">Search for a game to start.</footer>
       </div>
     </div>
 
     <div id="bindingEditorBackdrop" class="dialog-backdrop hidden">
-      <div class="binding-editor-dialog">
+      <div class="binding-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="bindingEditorTitle">
         <header>
           <h2 id="bindingEditorTitle">Edit Button</h2>
           <div class="binding-editor-header-actions">
             <button id="bindingEditorToggleAdvancedBtn" type="button">Advanced</button>
-            <button id="bindingEditorCloseBtn" type="button">&times;</button>
+            <button id="bindingEditorCloseBtn" type="button" aria-label="Close">&times;</button>
           </div>
         </header>
         <div id="bindingEditorGrid" class="binding-editor-grid">
@@ -183,7 +197,7 @@
               <div id="bindingEditorKeysPanel">
                 <div class="input-composer">
                   <div id="bindingEditorPressedMods" class="pressed-mods" aria-live="polite"></div>
-                  <input id="bindingEditorStepInput" type="text" placeholder="Press a key…" />
+                  <input id="bindingEditorStepInput" type="text" placeholder="Press a key…" aria-label="Binding input" />
                   <button id="bindingEditorClearInputBtn" type="button" aria-label="Reset input">&times;</button>
                 </div>
               </div>
@@ -281,24 +295,24 @@
             </div>
             <div id="bindingEditorAdvancedBody" class="advanced-body hidden">
             <label class="editor-field">
-              <span>Double Tap Time (0.0-1.0)</span>
-              <input id="bindingEditorDoubleTap" type="number" min="0" max="1" step="0.01" />
+              <span>Double Tap Time (ms)</span>
+              <input id="bindingEditorDoubleTap" type="number" min="0" max="10000" step="10" />
             </label>
             <label class="editor-field">
-              <span>Long Press Time (0.0-1.0)</span>
-              <input id="bindingEditorLongPress" type="number" min="0" max="1" step="0.01" />
+              <span>Long Press Time (ms)</span>
+              <input id="bindingEditorLongPress" type="number" min="0" max="10000" step="10" />
             </label>
             <label class="editor-field">
-              <span>Fire Start Delay (0.0-1.0)</span>
-              <input id="bindingEditorStartDelay" type="number" min="0" max="1" step="0.01" />
+              <span>Fire Start Delay (ms)</span>
+              <input id="bindingEditorStartDelay" type="number" min="0" max="10000" step="10" />
             </label>
             <label class="editor-field">
-              <span>Fire End Delay (0.0-1.0)</span>
-              <input id="bindingEditorEndDelay" type="number" min="0" max="1" step="0.01" />
+              <span>Fire End Delay (ms)</span>
+              <input id="bindingEditorEndDelay" type="number" min="0" max="10000" step="10" />
             </label>
             <label class="editor-field">
-              <span>Repeat Rate (0.0-1.0)</span>
-              <input id="bindingEditorRepeatRate" type="number" min="0" max="1" step="0.01" />
+              <span>Repeat Rate (ms)</span>
+              <input id="bindingEditorRepeatRate" type="number" min="0" max="10000" step="10" />
             </label>
             <label class="editor-field">
               <span>Haptics</span>
@@ -320,6 +334,35 @@
           <button id="bindingEditorDeleteBtn" type="button">Delete Activator</button>
           <button id="bindingEditorCloseFooterBtn" type="button">Done</button>
         </footer>
+      </div>
+    </div>
+
+    <div id="cheatSheetBackdrop" class="dialog-backdrop hidden">
+      <div class="cheat-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="cheatSheetTitle">
+        <header>
+          <h2 id="cheatSheetTitle">Cheat Sheet</h2>
+          <div class="dialog-header-actions">
+            <button id="cheatSheetCopyBtn" type="button">Copy as text</button>
+            <button id="cheatSheetPrintBtn" type="button" class="primary">Print / PDF</button>
+            <button id="cheatSheetCloseBtn" type="button" aria-label="Close">&times;</button>
+          </div>
+        </header>
+        <div id="cheatSheetBody" class="cheat-sheet-body"></div>
+      </div>
+    </div>
+
+    <div id="compareBackdrop" class="dialog-backdrop hidden">
+      <div class="compare-dialog" role="dialog" aria-modal="true" aria-labelledby="compareTitle">
+        <header>
+          <h2 id="compareTitle">Compare Layouts</h2>
+          <button id="compareCloseBtn" type="button" aria-label="Close">&times;</button>
+        </header>
+        <div class="compare-pickers">
+          <label><span>Before</span><select id="compareSelectA"></select></label>
+          <label><span>After</span><select id="compareSelectB"></select></label>
+        </div>
+        <p id="compareSummary" class="muted" role="status"></p>
+        <ul id="compareList" class="compare-list"></ul>
       </div>
     </div>
 
