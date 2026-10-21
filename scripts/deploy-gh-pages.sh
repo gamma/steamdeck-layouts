@@ -23,13 +23,27 @@ if [[ -z "$owner_repo" ]]; then
 fi
 
 branch=$(git branch --show-current)
+if [[ "$branch" != "main" ]]; then
+  echo "Pages deploys from main only; current branch is '$branch'." >&2
+  exit 5
+fi
+head_sha=$(git rev-parse HEAD)
 
 git push -u origin "$branch"
 
-echo "Waiting for GitHub Pages deployment workflow to complete..."
-run_id=$(gh run list --workflow "Deploy static site to GitHub Pages" --branch "$branch" --limit 1 --json databaseId -q '.[0].databaseId')
-if [[ -n "${run_id:-}" ]]; then
-  gh run watch "$run_id"
+echo "Waiting for the GitHub Pages workflow run of ${head_sha:0:7}..."
+run_id=""
+for _ in $(seq 1 30); do
+  # Match the run to the pushed commit; the newest run may still be an older one.
+  run_id=$(gh run list --workflow "Deploy static site to GitHub Pages" --branch "$branch" --limit 10 \
+    --json databaseId,headSha -q ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -n 1)
+  [[ -n "$run_id" ]] && break
+  sleep 2
+done
+if [[ -n "$run_id" ]]; then
+  gh run watch "$run_id" --exit-status
+else
+  echo "No workflow run found for ${head_sha:0:7} yet; check the Actions tab." >&2
 fi
 
 echo "Potential Pages URL: https://${owner_repo%%/*}.github.io/${owner_repo##*/}/"
