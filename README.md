@@ -2,11 +2,10 @@
 
 A visual-first Steam Deck layout editor MVP with:
 - Interactive 3D deck view using Valve's Steam Deck shell CAD
-- Steam store game search + Steam community layout loading via local proxy
+- Steam store game search + Steam community layout loading via a small proxy (local Node or hosted PHP)
 - Full-screen community layout dialog (games/filter left, layouts middle, details right)
 - Parsed Steam Input bindings rendered as table rows and short hideable 3D callout tags
-- JSON save/load workflow plus drag&drop/layout storage API persistence
-- JSON save/load workflow plus drag&drop/layout storage API persistence
+- JSON save/load workflow plus drag&drop and local draft persistence
 
 ## Run locally
 
@@ -17,12 +16,25 @@ node server.js
 Open `http://127.0.0.1:8000`.
 Click “Browse Community Layouts” to open the dialog, which lays out games on the left, layout search/filter in the middle (it always queries Steam Deck layouts), and layout details/tags on the right; within the gallery the Overlay button toggles the short callouts and connector lines. Drag `.json` files onto the deck view or use the Save/Load buttons to leverage the File System Access API for local persistence (it falls back to download/upload when unsupported).
 
-`server.js` serves the app and proxies:
+`server.js` serves the app and relays, under `./api`:
 - Steam store search for resolving game names to app IDs
 - SteamInputDB app pages for community layout metadata
-- Steam CDN layout VDF downloads for parsing
+- Steam CDN layout VDF downloads
 
-The old static `python3 -m http.server` flow is not enough anymore because browser-side direct fetches to SteamInputDB/CDN are blocked by CORS.
+The proxy exists because Steam and SteamInputDB send no CORS headers, so the browser cannot read them directly. It only validates, fetches and relays; all parsing happens in the browser (`core/community.js`).
+
+Run the tests with `npm test` (Node 22+).
+
+## Hosted proxy (PHP webspace)
+
+Static hosting such as GitHub Pages cannot run `server.js`. Deploy `proxy/` to any PHP 8.1+ webspace with the curl extension instead (e.g. Hetzner Webhosting):
+
+1. Upload the contents of `proxy/` to a directory, e.g. `https://example.com/sdl-api/`.
+2. Copy `config.example.php` to `config.php` and list your frontend origin(s) in `allowed_origins`, e.g. `https://<your-username>.github.io`.
+3. Make sure the web server can write the `cache/` directory (or point `cache_dir` outside the web root).
+4. Set `REMOTE_API_BASE` in `config.js` to `https://example.com/sdl-api/api.php` and push.
+
+The PHP proxy and `server.js` share the same contract (`?endpoint=store-search|community-layouts|layout-file`), so the app can use either. Viewers can point the app at another proxy with `?api=<url>` (remembered in the browser) and reset it with `?api=default`. When served from localhost, the app uses `./api` by default.
 
 ## Model source
 
@@ -41,6 +53,7 @@ This repo includes a Pages workflow at `.github/workflows/deploy-pages.yml`.
 2. In GitHub: **Settings → Pages**.
 3. Set **Source** to **GitHub Actions**.
 4. The workflow will publish the static site on each push to `main`.
+5. Deploy the PHP proxy (see above) and set `REMOTE_API_BASE`, otherwise game search and community layouts are unavailable on Pages.
 
 Your app will be available at:
 `https://<your-username>.github.io/<your-repo>/`

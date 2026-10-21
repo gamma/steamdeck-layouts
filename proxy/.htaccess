@@ -1,0 +1,11 @@
+Options -Indexes
+
+# Only api.php is public; config and cache stay private.
+<FilesMatch "^(?!api\.php$).+">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^cache/ - [F,L]
+</IfModule>

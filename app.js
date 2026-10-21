@@ -1,6 +1,8 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js";
+import { REMOTE_API_BASE, LOCAL_API_BASE } from "./config.js";
+import { extractSteamInputDbLayouts, mapStoreSearchItems } from "./core/community.js";
 
 const DEFAULT_CONTROLS = [
   { id: "left_bumper", name: "L1 Bumper", kind: "bumper", pos: [-1.9070061445236206, 1.124805967013041, -0.022185817981759705], size: [0.54, 0.18, 0.28], rotation: [-0.17970247776285814, -0.010401277067988768, 0.057192679649428126], scale: [1, 1, 0.7477379880849421] },
@@ -92,6 +94,8 @@ const ACTIVATOR_TYPES = [
 const MODIFIER_TOKENS = ["Ctrl", "Shift", "Alt", "Meta"];
 const THEME_STORAGE_KEY = "steamdeck-layout-theme";
 const DRAFT_STORAGE_KEY = "steamdeck-layout-draft";
+const API_BASE_STORAGE_KEY = "steamdeck-layout-api-base";
+const API_BASE = resolveApiBase();
 const themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const el = {
@@ -359,6 +363,39 @@ function initTheme() {
   } else if (typeof themeMediaQuery.addListener === "function") {
     themeMediaQuery.addListener(handleThemeChange);
   }
+}
+
+function resolveApiBase() {
+  let override = new URLSearchParams(window.location.search).get("api")?.trim() ?? "";
+  try {
+    if (override === "default") {
+      localStorage.removeItem(API_BASE_STORAGE_KEY);
+      override = "";
+    } else if (override) {
+      localStorage.setItem(API_BASE_STORAGE_KEY, override);
+    } else {
+      override = localStorage.getItem(API_BASE_STORAGE_KEY) ?? "";
+    }
+  } catch {
+    // Storage unavailable: the override applies to this page load only.
+  }
+  if (override === "default") override = "";
+  if (override) return override;
+  const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  return isLocal || !REMOTE_API_BASE ? LOCAL_API_BASE : REMOTE_API_BASE;
+}
+
+function apiUrl(endpoint, params) {
+  const url = new URL(API_BASE, window.location.href);
+  url.searchParams.set("endpoint", endpoint);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
+async function fetchCommunityLayoutVdf(layoutMeta) {
+  const response = await fetch(apiUrl("layout-file", { url: layoutMeta.file_url }));
+  if (!response.ok) throw new Error("Layout fetch failed");
+  return response.text();
 }
 
 function readThemeMode() {
@@ -1743,14 +1780,13 @@ async function searchGames() {
 
   setLayoutStatus(`Searching Steam for "${query}"...`);
   try {
-    const response = await fetch(`/api/store-search?q=${encodeURIComponent(query)}`);
+    const response = await fetch(apiUrl("store-search", { q: query }));
     if (!response.ok) throw new Error("Game search failed");
-    const payload = await response.json();
-    state.gameResults = Array.isArray(payload.items) ? payload.items : [];
+    state.gameResults = mapStoreSearchItems(await response.json());
     renderGameResults();
     setLayoutStatus(state.gameResults.length ? `Found ${state.gameResults.length} game result(s).` : "No games found.");
   } catch {
-    setLayoutStatus("Game search failed. Start the app with the local proxy server.", true);
+    setLayoutStatus("Game search failed. The layout proxy is unreachable.", true);
   }
 }
 
@@ -1792,10 +1828,9 @@ async function loadCommunityLayouts(options = {}) {
 
   setLayoutStatus(`Loading community layouts for ${state.selectedGame.name}...`);
   try {
-    const response = await fetch(`/api/community-layouts?${params.toString()}`);
+    const response = await fetch(apiUrl("community-layouts", Object.fromEntries(params)));
     if (!response.ok) throw new Error("Layout search failed");
-    const payload = await response.json();
-    state.communityLayouts = Array.isArray(payload.layouts) ? payload.layouts : [];
+    state.communityLayouts = extractSteamInputDbLayouts(await response.text());
     renderCommunityLayouts();
     setLayoutStatus(
       state.communityLayouts.length
@@ -1803,7 +1838,7 @@ async function loadCommunityLayouts(options = {}) {
         : `No layouts found for ${state.selectedGame.name}.`
     );
   } catch {
-    setLayoutStatus("Community layout loading failed. Start the app with the local proxy server.", true);
+    setLayoutStatus("Community layout loading failed. The layout proxy is unreachable.", true);
   }
 }
 
@@ -1877,10 +1912,7 @@ async function loadCommunityLayout(layoutMeta) {
 
   setLayoutStatus(`Loading ${target.title}...`);
   try {
-    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
-    if (!response.ok) throw new Error("Layout fetch failed");
-    const payload = await response.json();
-    const parsed = parseVdf(payload.vdf);
+    const parsed = parseVdf(await fetchCommunityLayoutVdf(target));
     const bindings = extractBindingsFromLayout(parsed);
     const mappedControlCount = Object.values(bindings).filter((entries) => Array.isArray(entries) && entries.length > 0).length;
     const mappingSummary = mappedControlCount
@@ -1912,11 +1944,9 @@ async function downloadCommunityLayout(layoutMeta) {
 
   setLayoutStatus(`Downloading ${target.title || `Layout ${target.file_id}`}...`);
   try {
-    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
-    if (!response.ok) throw new Error("Layout fetch failed");
-    const payload = await response.json();
+    const vdf = await fetchCommunityLayoutVdf(target);
     const filename = getCommunityLayoutFileName(target);
-    const blob = new Blob([payload.vdf ?? ""], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([vdf], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = filename;
