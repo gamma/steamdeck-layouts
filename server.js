@@ -11,7 +11,9 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const USER_AGENT = "steamdeck-layouts/1.0";
 const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED_HOSTS = new Set(["store.steampowered.com", "api.steampowered.com", "www.steaminputdb.com", "cdn.steamusercontent.com"]);
+const ALLOWED_HOSTS = new Set(["store.steampowered.com", "api.steampowered.com", "cdn.steamusercontent.com"]);
+// Steam UGC download paths: /ugc/<handle>/<sha1>/
+const UGC_PATH_PATTERN = /^\/ugc\/\d{1,24}\/[0-9a-f]{40}\/?$/i;
 const FILE_DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
 const QUERY_FILES_URL = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/";
 // Steam Input layouts are UGC of the "Steam Controller Configs" app.
@@ -19,7 +21,6 @@ const CONTROLLER_CONFIGS_APP_ID = 241100;
 const FILE_TYPE_CONTROLLER_BINDINGS = 15;
 const QUERY_TYPES = { vote: 0, publication: 1, trend: 3, text_search: 12 };
 const STEAM_API_KEY = process.env.STEAM_API_KEY || process.env.STEAM_DEVELOPER_KEY || "";
-const SORT_VALUES = new Set(["vote", "publication", "trend", "text_search"]);
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -107,27 +108,6 @@ function resolveUpstream(params) {
       url.search = new URLSearchParams({ key: STEAM_API_KEY, input_json: JSON.stringify(query) }).toString();
       return { url: url.toString(), contentType: "application/json; charset=utf-8" };
     }
-    case "community-layouts": {
-      const appid = param("appid");
-      if (!/^\d{1,10}$/.test(appid)) throw new HttpError(400, "Invalid appid");
-      const url = new URL(`https://www.steaminputdb.com/app/${appid}`);
-      const searchText = param("searchtext");
-      const sort = param("sort");
-      const controllerType = param("controller_type");
-      if (searchText) {
-        if (searchText.length > 200) throw new HttpError(400, "Invalid searchtext");
-        url.searchParams.set("searchtext", searchText);
-      }
-      if (sort) {
-        if (!SORT_VALUES.has(sort)) throw new HttpError(400, "Invalid sort");
-        url.searchParams.set("sort-by", sort);
-      }
-      if (controllerType) {
-        if (!/^[a-z0-9_]{1,40}$/.test(controllerType)) throw new HttpError(400, "Invalid controller_type");
-        url.searchParams.set("controller_type", controllerType);
-      }
-      return { url: url.toString(), contentType: "text/plain; charset=utf-8" };
-    }
     case "file-details": {
       // Keyless Steam Web API call; resolves a shared layout id to its file.
       const id = param("id");
@@ -145,8 +125,11 @@ function resolveUpstream(params) {
       } catch {
         throw new HttpError(400, "Invalid url");
       }
-      if (url.protocol !== "https:" || url.hostname !== "cdn.steamusercontent.com" || url.port || url.username || url.password) {
-        throw new HttpError(400, "Unsupported layout host");
+      if (
+        url.protocol !== "https:" || url.hostname !== "cdn.steamusercontent.com" || url.port || url.username || url.password
+        || url.search || url.hash || !UGC_PATH_PATTERN.test(url.pathname)
+      ) {
+        throw new HttpError(400, "Unsupported layout url");
       }
       return { url: url.toString(), contentType: "text/plain; charset=utf-8" };
     }

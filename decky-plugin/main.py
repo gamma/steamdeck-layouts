@@ -13,6 +13,7 @@ reported back for diagnostics.
 import glob
 import json
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -24,6 +25,7 @@ from vdf_lite import parse_vdf
 FILE_DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 CONTROLLER_CONFIGS_APP_ID = 241100
 ALLOWED_DOWNLOAD_HOST = "cdn.steamusercontent.com"
+UGC_PATH_PATTERN = re.compile(r"^/ugc/\d{1,24}/[0-9A-Fa-f]{40}/?$")
 CACHE_TTL_SECONDS = 7 * 24 * 3600
 
 
@@ -132,8 +134,9 @@ def fetch_workshop_layout(file_id, roots, notes):
     if entry.get("result") != 1 or entry.get("creator_app_id") != CONTROLLER_CONFIGS_APP_ID or not file_url:
         notes.append(f"file {file_id} is not a downloadable controller layout")
         return None
-    if urllib.parse.urlparse(file_url).hostname != ALLOWED_DOWNLOAD_HOST:
-        notes.append(f"unexpected download host for {file_id}")
+    parsed = urllib.parse.urlparse(file_url)
+    if parsed.scheme != "https" or parsed.hostname != ALLOWED_DOWNLOAD_HOST or parsed.query or not UGC_PATH_PATTERN.match(parsed.path):
+        notes.append(f"unexpected download url for {file_id}")
         return None
     result = {"text": http_text(file_url), "title": entry.get("title") or "", "path": file_url}
     os.makedirs(cache_dir, exist_ok=True)

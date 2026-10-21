@@ -2,7 +2,7 @@ import * as THREE from "https://esm.sh/three@0.160.0";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js";
 import { REMOTE_API_BASE, LOCAL_API_BASE } from "./config.js";
-import { extractSteamInputDbLayouts, mapQueryFilesLayouts, mapStoreSearchItems } from "./core/community.js";
+import { mapQueryFilesLayouts, mapStoreSearchItems } from "./core/community.js";
 import { parseVdf, serializeVdf } from "./core/vdf.js";
 import { readControllerConfig, buildControllerConfig, getEffectiveBindings } from "./core/steam-input.js";
 import {
@@ -2109,8 +2109,7 @@ async function loadCommunityLayouts(options = {}) {
 
   const params = {
     appid: String(game.id),
-    sort: el.layoutSortSelect.value,
-    controller_type: "controller_neptune"
+    sort: el.layoutSortSelect.value
   };
   const searchText = ignoreLayoutSearch ? "" : el.layoutSearchInput.value.trim();
   if (searchText && searchText !== "*") params.searchtext = searchText;
@@ -2132,17 +2131,10 @@ async function loadCommunityLayouts(options = {}) {
   }
 }
 
-/**
- * Steam's own listing first; SteamInputDB only when the proxy has no Steam
- * Web API key (503).
- */
 async function fetchCommunityLayoutList(params) {
   const response = await fetch(apiUrl("layouts", params));
-  if (response.ok) return mapQueryFilesLayouts(await response.json());
-  if (response.status !== 503) throw new Error("Layout search failed");
-  const fallback = await fetch(apiUrl("community-layouts", params));
-  if (!fallback.ok) throw new Error("Layout search failed");
-  return extractSteamInputDbLayouts(await fallback.text());
+  if (!response.ok) throw new Error("Layout search failed");
+  return mapQueryFilesLayouts(await response.json());
 }
 
 function renderCommunityLayouts() {

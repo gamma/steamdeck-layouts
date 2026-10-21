@@ -1,8 +1,8 @@
 <?php
 // Steam Deck Layout Studio proxy: forwards a fixed set of upstream requests
 // verbatim so the browser can read them despite missing CORS headers.
-// Parsing happens client-side (core/community.js); this script only validates,
-// fetches, caches and relays.
+// Parsing happens client-side (core/); this script only validates, rate
+// limits, fetches, caches and relays.
 
 declare(strict_types=1);
 
@@ -14,19 +14,26 @@ $config = array_merge(
         'cache_dir' => __DIR__ . '/cache',
         'timeout_seconds' => 10,
         'max_bytes' => 5 * 1024 * 1024,
+        // Per client IP and minute: all requests, and those that reach Steam.
+        'rate_limit_requests' => 120,
+        'rate_limit_upstream' => 20,
+        // The cache is pruned to this size, oldest entries first.
+        'cache_max_bytes' => 100 * 1024 * 1024,
     ],
     is_file(__DIR__ . '/config.php') ? (array) require __DIR__ . '/config.php' : []
 );
 
 const USER_AGENT = 'steamdeck-layouts/1.0';
-const ALLOWED_HOSTS = ['store.steampowered.com', 'api.steampowered.com', 'www.steaminputdb.com', 'cdn.steamusercontent.com'];
+const ALLOWED_HOSTS = ['store.steampowered.com', 'api.steampowered.com', 'cdn.steamusercontent.com'];
+// Steam UGC download paths: /ugc/<handle>/<sha1>/
+const UGC_PATH_PATTERN = '#^/ugc/\d{1,24}/[0-9A-F]{40}/?$#i';
+const RATE_WINDOW_SECONDS = 60;
 const FILE_DETAILS_URL = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/';
 const QUERY_FILES_URL = 'https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/';
 // Steam Input layouts are UGC of the "Steam Controller Configs" app.
 const CONTROLLER_CONFIGS_APP_ID = 241100;
 const FILE_TYPE_CONTROLLER_BINDINGS = 15;
 const QUERY_TYPES = ['vote' => 0, 'publication' => 1, 'trend' => 3, 'text_search' => 12];
-const SORT_VALUES = ['vote', 'publication', 'trend', 'text_search'];
 
 sendCorsHeaders($config['allowed_origins']);
 header('X-Content-Type-Options: nosniff');
@@ -40,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     fail(405, 'Method not allowed');
 }
+
+checkRateLimit($config, 'requests');
 
 $endpoint = param('endpoint');
 switch ($endpoint) {
@@ -83,29 +92,6 @@ switch ($endpoint) {
         relay($upstream, 'application/json; charset=utf-8', 1800, $config);
         break;
 
-    case 'community-layouts':
-        $appid = param('appid');
-        if (!preg_match('/^\d{1,10}$/', $appid)) fail(400, 'Invalid appid');
-        $query = [];
-        $searchText = param('searchtext');
-        if ($searchText !== '') {
-            if (mb_strlen($searchText) > 200) fail(400, 'Invalid searchtext');
-            $query['searchtext'] = $searchText;
-        }
-        $sort = param('sort');
-        if ($sort !== '') {
-            if (!in_array($sort, SORT_VALUES, true)) fail(400, 'Invalid sort');
-            $query['sort-by'] = $sort;
-        }
-        $controllerType = param('controller_type');
-        if ($controllerType !== '') {
-            if (!preg_match('/^[a-z0-9_]{1,40}$/', $controllerType)) fail(400, 'Invalid controller_type');
-            $query['controller_type'] = $controllerType;
-        }
-        $upstream = 'https://www.steaminputdb.com/app/' . $appid . ($query ? '?' . http_build_query($query) : '');
-        relay($upstream, 'text/plain; charset=utf-8', 1800, $config);
-        break;
-
     case 'file-details':
         // Keyless Steam Web API call; resolves a shared layout id to its file.
         $id = param('id');
@@ -122,8 +108,10 @@ switch ($endpoint) {
             || ($parts['scheme'] ?? '') !== 'https'
             || ($parts['host'] ?? '') !== 'cdn.steamusercontent.com'
             || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])
+            || isset($parts['query']) || isset($parts['fragment'])
+            || !preg_match(UGC_PATH_PATTERN, $parts['path'] ?? '')
         ) {
-            fail(400, 'Unsupported layout host');
+            fail(400, 'Unsupported layout url');
         }
         // Published files are immutable; an update gets a new URL.
         relay($url, 'text/plain; charset=utf-8', 30 * 86400, $config);
@@ -166,8 +154,9 @@ function relay(string $url, string $contentType, int $ttl, array $config, ?strin
     $cacheState = 'HIT';
     if ($body === null) {
         $cacheState = 'MISS';
+        checkRateLimit($config, 'upstream');
         $body = fetchUpstream($url, $config, $form);
-        writeCache($cacheFile, $body);
+        writeCache($cacheFile, $body, $config);
     }
 
     http_response_code(200);
@@ -185,13 +174,77 @@ function readCache(string $file, int $ttl): ?string
     return $body === false ? null : $body;
 }
 
-function writeCache(string $file, string $body): void
+function writeCache(string $file, string $body, array $config): void
 {
     $dir = dirname($file);
     if (!is_dir($dir) && !@mkdir($dir, 0750, true)) return;
     $temp = $file . '.' . bin2hex(random_bytes(4)) . '.tmp';
     if (@file_put_contents($temp, $body) !== false) {
         @rename($temp, $file);
+    }
+    // Pruning walks the directory, so it runs on a small share of writes.
+    if (random_int(1, 25) === 1) pruneCache($dir, (int) $config['cache_max_bytes']);
+}
+
+/** Drops entries older than the longest TTL, then the oldest until under the size cap. */
+function pruneCache(string $dir, int $maxBytes): void
+{
+    $entries = [];
+    $total = 0;
+    foreach (glob($dir . '/*.cache') ?: [] as $path) {
+        $mtime = @filemtime($path);
+        $size = @filesize($path);
+        if ($mtime === false || $size === false) continue;
+        if ($mtime < time() - 31 * 86400) {
+            @unlink($path);
+            continue;
+        }
+        $entries[] = [$mtime, $size, $path];
+        $total += $size;
+    }
+    foreach (glob($dir . '/*.tmp') ?: [] as $path) {
+        if (@filemtime($path) < time() - 3600) @unlink($path);
+    }
+    if ($total <= $maxBytes) return;
+    sort($entries);
+    foreach ($entries as [, $size, $path]) {
+        if ($total <= $maxBytes * 0.8) break;
+        if (@unlink($path)) $total -= $size;
+    }
+}
+
+/**
+ * Fixed-window counter per client IP. REMOTE_ADDR is used on purpose:
+ * forwarding headers can be set by any client.
+ */
+function checkRateLimit(array $config, string $bucket): void
+{
+    $limit = (int) $config[$bucket === 'upstream' ? 'rate_limit_upstream' : 'rate_limit_requests'];
+    if ($limit <= 0) return;
+    $dir = rtrim($config['cache_dir'], '/') . '/ratelimit';
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true)) return;
+    $window = intdiv(time(), RATE_WINDOW_SECONDS);
+    $client = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? '') . '|' . $bucket);
+    $handle = @fopen($dir . '/' . $client, 'c+');
+    if ($handle === false) return;
+    $count = 0;
+    if (flock($handle, LOCK_EX)) {
+        [$storedWindow, $storedCount] = array_map('intval', explode(':', (string) stream_get_contents($handle)) + [0, 0]);
+        $count = $storedWindow === $window ? $storedCount + 1 : 1;
+        ftruncate($handle, 0);
+        rewind($handle);
+        fwrite($handle, $window . ':' . $count);
+        flock($handle, LOCK_UN);
+    }
+    fclose($handle);
+    if (random_int(1, 200) === 1) {
+        foreach (glob($dir . '/*') ?: [] as $path) {
+            if (@filemtime($path) < time() - 10 * RATE_WINDOW_SECONDS) @unlink($path);
+        }
+    }
+    if ($count > $limit) {
+        header('Retry-After: ' . (RATE_WINDOW_SECONDS - time() % RATE_WINDOW_SECONDS));
+        fail(429, 'Too many requests');
     }
 }
 

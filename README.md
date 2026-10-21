@@ -21,11 +21,10 @@ Open `http://127.0.0.1:8000`. Click “Browse Community Layouts”, pick a game,
 `server.js` serves the app and relays, under `./api`:
 - `store-search`: Steam store search for resolving game names to app IDs
 - `layouts`: Steam's `IPublishedFileService/QueryFiles` for a game's public Steam Deck layouts (needs a Steam Web API key: `STEAM_API_KEY` for `server.js`, `steam_api_key` in `proxy/config.php`)
-- `community-layouts`: SteamInputDB app pages, used only when no key is configured
 - `file-details`: Steam's keyless `GetPublishedFileDetails`, used by share links
-- `layout-file`: Steam CDN layout VDF downloads
+- `layout-file`: Steam CDN layout VDF downloads (only `https://cdn.steamusercontent.com/ugc/<id>/<sha1>/`)
 
-The proxy exists because Steam and SteamInputDB send no CORS headers, so the browser cannot read them directly. It only validates, fetches and relays; all parsing happens in the browser (`core/`).
+The proxy exists because Steam sends no CORS headers, so the browser cannot read them directly. It only validates, fetches and relays; all parsing happens in the browser (`core/`).
 
 Run the tests with `npm test` (Node 22+).
 
@@ -37,7 +36,7 @@ Run the tests with `npm test` (Node 22+).
   - `binding-dsl.js`: binding strings such as `key_press SPACE, Jump`
   - `layout-model.js`: the editor's activator model and draft migration
   - `layout-summary.js`: descriptions, overview and diff
-  - `community.js`: Steam store and SteamInputDB response parsing
+  - `community.js`: Steam store search and layout listing mapping
 - `app.js`: UI, 3D scene and editor
 - `server.js`, `proxy/api.php`: local and hosted proxy with the same contract
 
@@ -50,10 +49,11 @@ Static hosting such as GitHub Pages cannot run `server.js`. Deploy `proxy/` to a
 1. Upload the contents of `proxy/` to a directory, e.g. `https://example.com/sdl-api/`.
 2. Copy `config.example.php` to `config.php` and list your frontend origin(s) in `allowed_origins`, e.g. `https://<your-username>.github.io`.
 3. Put a Steam Web API key (https://steamcommunity.com/dev/apikey) into `steam_api_key`. It stays on the server; responses never contain it.
+   The proxy limits each client IP per minute (`rate_limit_requests`, `rate_limit_upstream` for requests that reach Steam) and prunes its cache to `cache_max_bytes`. Upload `root.htaccess` as `.htaccess` to the site root to send HSTS and disable directory listings there too.
 4. Make sure the web server can write the `cache/` directory (or point `cache_dir` outside the web root).
 5. Set `REMOTE_API_BASE` in `config.js` to `https://example.com/sdl-api/api.php` and push.
 
-The PHP proxy and `server.js` share the same contract (`?endpoint=store-search|layouts|community-layouts|file-details|layout-file`), so the app can use either. Viewers can point the app at another proxy with `?api=<url>` (remembered in the browser) and reset it with `?api=default`. When served from localhost, the app uses `./api` by default.
+The PHP proxy and `server.js` share the same contract (`?endpoint=store-search|layouts|file-details|layout-file`), so the app can use either. Viewers can point the app at another proxy with `?api=<url>` (remembered in the browser) and reset it with `?api=default`. When served from localhost, the app uses `./api` by default.
 
 ## Model source
 
