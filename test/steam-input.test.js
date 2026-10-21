@@ -54,8 +54,10 @@ test("reads action sets, layers, modes and sub-inputs", () => {
   assert.equal(base.modes.right_pad.settings.sensitivity, "145");
   assert.equal(base.bindings.left_grip_4[0].actions[0].output, "R");
   assert.equal(base.bindings.left_grip_5[0].actions[0].output, "V");
-  assert.equal(base.bindings.right_trigger[1].type, "soft_press");
+  assert.equal(base.bindings.right_trigger[1].input, "edge");
   assert.equal(base.bindings.right_trigger[1].actions[0].output, "Hold Layer: Aiming");
+  assert.equal(base.bindings.left_trigger[0].input, "switch_click", "switch-group trigger buttons are kept");
+  assert.equal(base.modes.left_pad.mode, "radial_menu");
   assert.deepEqual(base.gyro, { mode: "gyro_to_mouse" });
   assert.equal(base.modes.right_stick.mode, "joystick_camera");
   assert.equal(base.bindings.right_stick[0].modeshift, true);
@@ -72,8 +74,17 @@ test("describes activators with Steam labels and qualifiers", () => {
   assert.equal(describeActivator(base.bindings.a[1]), "Long Press: Ctrl");
   assert.equal(describeActivator(base.bindings.left_stick[0]), "Up: W");
   assert.equal(describeActivator(base.bindings.right_stick[0]), "Mode Shift · Up: 1");
-  assert.equal(describeActivator(base.bindings.right_trigger[0]), "Full Pull: Left Mouse");
-  assert.equal(describeActivator(base.bindings.right_trigger[1], { presetNames: { 1: "Aiming" } }), "Soft Pull: Aim (Hold Layer: Aiming)");
+  assert.deepEqual(describeControl(base.bindings.right_trigger, base.modes.right_trigger, { presetNames: { 1: "Aiming" } }), [
+    "Mode: Trigger",
+    "Full Pull: Left Mouse",
+    "Soft Pull: Aim (Hold Layer: Aiming)"
+  ]);
+  assert.equal(describeActivator(base.bindings.left_trigger[0]), "Digital: Gamepad LT");
+  assert.deepEqual(describeControl(base.bindings.left_pad, base.modes.left_pad), [
+    "Mode: Radial Menu (2 items)",
+    "Center: Medkit (1)",
+    "Item 1: Grenade (2)"
+  ]);
   assert.deepEqual(describeControl(base.bindings.right_pad, base.modes.right_pad), ["Mode: Mouse", "Click · Soft Press: Left Mouse"]);
   const overview = describeLayoutOverview(base, CONTROLS);
   assert.match(overview, /Gyro: Gyro To Mouse\./);

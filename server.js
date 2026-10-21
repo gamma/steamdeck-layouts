@@ -13,6 +13,12 @@ const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_HOSTS = new Set(["store.steampowered.com", "api.steampowered.com", "www.steaminputdb.com", "cdn.steamusercontent.com"]);
 const FILE_DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
+const QUERY_FILES_URL = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/";
+// Steam Input layouts are UGC of the "Steam Controller Configs" app.
+const CONTROLLER_CONFIGS_APP_ID = 241100;
+const FILE_TYPE_CONTROLLER_BINDINGS = 15;
+const QUERY_TYPES = { vote: 0, publication: 1, trend: 3, text_search: 12 };
+const STEAM_API_KEY = process.env.STEAM_API_KEY || process.env.STEAM_DEVELOPER_KEY || "";
 const SORT_VALUES = new Set(["vote", "publication", "trend", "text_search"]);
 
 const MIME_TYPES = {
@@ -69,6 +75,36 @@ function resolveUpstream(params) {
       if (!query || query.length > 200) throw new HttpError(400, "Invalid q");
       const url = new URL("https://store.steampowered.com/api/storesearch/");
       url.search = new URLSearchParams({ term: query, l: "english", cc: "us" }).toString();
+      return { url: url.toString(), contentType: "application/json; charset=utf-8" };
+    }
+    case "layouts": {
+      // Community layouts for a game straight from Steam (needs a Web API key).
+      if (!STEAM_API_KEY) throw new HttpError(503, "Steam API key not configured");
+      const appid = param("appid");
+      if (!/^\d{1,10}$/.test(appid)) throw new HttpError(400, "Invalid appid");
+      const sort = param("sort") || "vote";
+      if (!(sort in QUERY_TYPES)) throw new HttpError(400, "Invalid sort");
+      const searchText = param("searchtext");
+      if (searchText.length > 200) throw new HttpError(400, "Invalid searchtext");
+      const page = param("page") || "1";
+      if (!/^\d{1,3}$/.test(page) || Number(page) < 1) throw new HttpError(400, "Invalid page");
+      const query = {
+        appid: CONTROLLER_CONFIGS_APP_ID,
+        filetype: FILE_TYPE_CONTROLLER_BINDINGS,
+        query_type: QUERY_TYPES[sort],
+        page: Number(page),
+        numperpage: 50,
+        return_details: true,
+        return_tags: true,
+        return_kv_tags: true,
+        return_vote_data: true,
+        requiredtags: ["controller_neptune"],
+        required_kv_tags: [{ key: "app", value: appid }, { key: "visibility", value: "public" }]
+      };
+      if (sort === "trend") query.days = 30;
+      if (searchText) query.search_text = searchText;
+      const url = new URL(QUERY_FILES_URL);
+      url.search = new URLSearchParams({ key: STEAM_API_KEY, input_json: JSON.stringify(query) }).toString();
       return { url: url.toString(), contentType: "application/json; charset=utf-8" };
     }
     case "community-layouts": {

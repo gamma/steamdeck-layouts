@@ -133,7 +133,7 @@
 		"mode"		"trigger"
 		"inputs"
 		{
-			"edge"
+			"click"
 			{
 				"activators"
 				{
@@ -144,7 +144,13 @@
 							"binding"		"mouse_button LEFT"
 						}
 					}
-					"Soft_Press"
+				}
+			}
+			"edge"
+			{
+				"activators"
+				{
+					"Full_Press"
 					{
 						"bindings"
 						{
@@ -183,6 +189,19 @@
 						"bindings"
 						{
 							"binding"		"key_press V"
+						}
+					}
+				}
+			}
+			"left_trigger"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button TRIGGER_LEFT"
 						}
 					}
 				}
@@ -263,6 +282,40 @@
 	}
 	"group"
 	{
+		"id"		"9"
+		"mode"		"radial_menu"
+		"inputs"
+		{
+			"touch_menu_button_1"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press 2, Grenade, , "
+						}
+					}
+				}
+			}
+			"touch_menu_button_0"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press 1, Medkit, , "
+						}
+					}
+				}
+			}
+		}
+	}
+	"group"
+	{
 		"id"		"8"
 		"mode"		"four_buttons"
 		"inputs"
@@ -296,6 +349,7 @@
 			"5"		"gyro active"
 			"6"		"right_joystick active modeshift"
 			"7"		"right_joystick active"
+			"9"		"left_trackpad active"
 		}
 	}
 	"preset"

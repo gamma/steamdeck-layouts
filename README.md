@@ -6,7 +6,8 @@ See what a Steam Deck layout does before you install it. Load a community layout
 - Full Steam Input reading: action sets and layers, group modes (Joystick Mouse, Directional Pad, Flick Stick, …), sub-inputs (directions, click, soft/full pull), mode shift, gyro, and the labels layout authors gave their bindings
 - Plain-language overview, printable cheat sheet (Print / PDF, copy as text) and a per-control comparison between two layouts or action sets
 - Shareable links: `?layout=<Steam published file id>` opens a layout directly
-- Community layout browser (Steam store search + SteamInputDB listings) via a small proxy
+- Community layout browser (Steam store search + Steam's own layout listings) via a small proxy
+- Decky Loader plugin (`decky-plugin/`): cheat sheet of the running game's layout in the Quick Access menu
 - Light editing with JSON save/load, VDF export and local draft persistence
 
 ## Run locally
@@ -19,7 +20,8 @@ Open `http://127.0.0.1:8000`. Click “Browse Community Layouts”, pick a game,
 
 `server.js` serves the app and relays, under `./api`:
 - `store-search`: Steam store search for resolving game names to app IDs
-- `community-layouts`: SteamInputDB app pages for community layout listings
+- `layouts`: Steam's `IPublishedFileService/QueryFiles` for a game's public Steam Deck layouts (needs a Steam Web API key: `STEAM_API_KEY` for `server.js`, `steam_api_key` in `proxy/config.php`)
+- `community-layouts`: SteamInputDB app pages, used only when no key is configured
 - `file-details`: Steam's keyless `GetPublishedFileDetails`, used by share links
 - `layout-file`: Steam CDN layout VDF downloads
 
@@ -47,10 +49,11 @@ Static hosting such as GitHub Pages cannot run `server.js`. Deploy `proxy/` to a
 
 1. Upload the contents of `proxy/` to a directory, e.g. `https://example.com/sdl-api/`.
 2. Copy `config.example.php` to `config.php` and list your frontend origin(s) in `allowed_origins`, e.g. `https://<your-username>.github.io`.
-3. Make sure the web server can write the `cache/` directory (or point `cache_dir` outside the web root).
-4. Set `REMOTE_API_BASE` in `config.js` to `https://example.com/sdl-api/api.php` and push.
+3. Put a Steam Web API key (https://steamcommunity.com/dev/apikey) into `steam_api_key`. It stays on the server; responses never contain it.
+4. Make sure the web server can write the `cache/` directory (or point `cache_dir` outside the web root).
+5. Set `REMOTE_API_BASE` in `config.js` to `https://example.com/sdl-api/api.php` and push.
 
-The PHP proxy and `server.js` share the same contract (`?endpoint=store-search|community-layouts|file-details|layout-file`), so the app can use either. Viewers can point the app at another proxy with `?api=<url>` (remembered in the browser) and reset it with `?api=default`. When served from localhost, the app uses `./api` by default.
+The PHP proxy and `server.js` share the same contract (`?endpoint=store-search|layouts|community-layouts|file-details|layout-file`), so the app can use either. Viewers can point the app at another proxy with `?api=<url>` (remembered in the browser) and reset it with `?api=default`. When served from localhost, the app uses `./api` by default.
 
 ## Model source
 

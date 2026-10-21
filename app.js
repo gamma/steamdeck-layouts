@@ -2,7 +2,7 @@ import * as THREE from "https://esm.sh/three@0.160.0";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js";
 import { REMOTE_API_BASE, LOCAL_API_BASE } from "./config.js";
-import { extractSteamInputDbLayouts, mapStoreSearchItems } from "./core/community.js";
+import { extractSteamInputDbLayouts, mapQueryFilesLayouts, mapStoreSearchItems } from "./core/community.js";
 import { parseVdf, serializeVdf } from "./core/vdf.js";
 import { readControllerConfig, buildControllerConfig, getEffectiveBindings } from "./core/steam-input.js";
 import {
@@ -434,7 +434,10 @@ async function loadLayoutFromDeepLink(fileId) {
       file_url: details.file_url,
       app_id: details.consumer_app_id,
       subscriptions: Number(details.lifetime_subscriptions ?? details.subscriptions ?? 0),
-      tags: Array.isArray(details.tags) ? details.tags.map((tag) => String(tag?.tag ?? tag)) : []
+      // Only feature tags ("feature_gyro") describe the layout itself.
+      tags: Array.isArray(details.tags)
+        ? details.tags.map((tag) => String(tag?.tag ?? tag)).filter((tag) => tag.startsWith("feature_")).map((tag) => tag.slice(8))
+        : []
     };
     const vdf = await fetchCommunityLayoutVdf(meta);
     backupDraft("before-link");
@@ -2115,9 +2118,7 @@ async function loadCommunityLayouts(options = {}) {
   const isLatest = beginRequest("community-layouts");
   setLayoutStatus(`Loading community layouts for ${game.name}...`);
   try {
-    const response = await fetch(apiUrl("community-layouts", params));
-    if (!response.ok) throw new Error("Layout search failed");
-    const layouts = extractSteamInputDbLayouts(await response.text());
+    const layouts = await fetchCommunityLayoutList(params);
     if (!isLatest()) return;
     state.communityLayouts = layouts.map((layout) => ({ ...layout, app_id: game.id }));
     renderCommunityLayouts();
@@ -2129,6 +2130,19 @@ async function loadCommunityLayouts(options = {}) {
   } catch {
     if (isLatest()) setLayoutStatus("Community layout loading failed. The layout proxy is unreachable.", true);
   }
+}
+
+/**
+ * Steam's own listing first; SteamInputDB only when the proxy has no Steam
+ * Web API key (503).
+ */
+async function fetchCommunityLayoutList(params) {
+  const response = await fetch(apiUrl("layouts", params));
+  if (response.ok) return mapQueryFilesLayouts(await response.json());
+  if (response.status !== 503) throw new Error("Layout search failed");
+  const fallback = await fetch(apiUrl("community-layouts", params));
+  if (!fallback.ok) throw new Error("Layout search failed");
+  return extractSteamInputDbLayouts(await fallback.text());
 }
 
 function renderCommunityLayouts() {

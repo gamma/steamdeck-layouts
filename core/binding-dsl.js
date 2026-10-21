@@ -123,9 +123,27 @@ export function bindingDslToOutput(dsl, context = {}) {
   }
 }
 
+const XINPUT_NAMES = {
+  A: "A", B: "B", X: "X", Y: "Y",
+  SHOULDER_LEFT: "LB", SHOULDER_RIGHT: "RB",
+  TRIGGER_LEFT: "LT", TRIGGER_RIGHT: "RT",
+  JOYSTICK_LEFT: "Left Stick Click", JOYSTICK_RIGHT: "Right Stick Click",
+  START: "Start", SELECT: "Back",
+  DPAD_UP: "D-Pad Up", DPAD_DOWN: "D-Pad Down", DPAD_LEFT: "D-Pad Left", DPAD_RIGHT: "D-Pad Right"
+};
+
+/** Readable text for display only; the editor keeps the canonical output. */
+function friendlyOutput(dsl, context) {
+  if (dsl.command === "xinput_button") {
+    const name = XINPUT_NAMES[dsl.argsRaw.toUpperCase()];
+    if (name) return `Gamepad ${name}`;
+  }
+  return bindingDslToOutput(dsl, context);
+}
+
 /** Output text plus Steam's own label when the layout author set one. */
 export function describeBindingDsl(dsl, context = {}) {
-  const output = bindingDslToOutput(dsl, context);
+  const output = friendlyOutput(dsl, context);
   const label = dsl.label && !dsl.label.startsWith("#") ? dsl.label : "";
   if (!label || label.toLowerCase() === output.toLowerCase()) return output;
   return output ? `${label} (${output})` : label;

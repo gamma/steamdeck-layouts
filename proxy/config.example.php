@@ -7,6 +7,10 @@ return [
         'http://localhost:8000',
         'http://127.0.0.1:8000',
     ],
+    // Steam Web API key (https://steamcommunity.com/dev/apikey) for the
+    // "layouts" endpoint. Never commit it; without it the app falls back to
+    // SteamInputDB listings.
+    'steam_api_key' => '',
     // Keep the cache outside the web root if your hosting allows it.
     'cache_dir' => __DIR__ . '/cache',
 ];

@@ -21,6 +21,11 @@ $config = array_merge(
 const USER_AGENT = 'steamdeck-layouts/1.0';
 const ALLOWED_HOSTS = ['store.steampowered.com', 'api.steampowered.com', 'www.steaminputdb.com', 'cdn.steamusercontent.com'];
 const FILE_DETAILS_URL = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/';
+const QUERY_FILES_URL = 'https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/';
+// Steam Input layouts are UGC of the "Steam Controller Configs" app.
+const CONTROLLER_CONFIGS_APP_ID = 241100;
+const FILE_TYPE_CONTROLLER_BINDINGS = 15;
+const QUERY_TYPES = ['vote' => 0, 'publication' => 1, 'trend' => 3, 'text_search' => 12];
 const SORT_VALUES = ['vote', 'publication', 'trend', 'text_search'];
 
 sendCorsHeaders($config['allowed_origins']);
@@ -45,6 +50,37 @@ switch ($endpoint) {
             'term' => $query, 'l' => 'english', 'cc' => 'us',
         ]);
         relay($upstream, 'application/json; charset=utf-8', 3600, $config);
+        break;
+
+    case 'layouts':
+        // Community layouts for a game straight from Steam (needs a Web API key).
+        $key = (string) ($config['steam_api_key'] ?? '');
+        if ($key === '') fail(503, 'Steam API key not configured');
+        $appid = param('appid');
+        if (!preg_match('/^\d{1,10}$/', $appid)) fail(400, 'Invalid appid');
+        $sort = param('sort') ?: 'vote';
+        if (!array_key_exists($sort, QUERY_TYPES)) fail(400, 'Invalid sort');
+        $searchText = param('searchtext');
+        if (mb_strlen($searchText) > 200) fail(400, 'Invalid searchtext');
+        $page = param('page') ?: '1';
+        if (!preg_match('/^\d{1,3}$/', $page) || (int) $page < 1) fail(400, 'Invalid page');
+        $query = [
+            'appid' => CONTROLLER_CONFIGS_APP_ID,
+            'filetype' => FILE_TYPE_CONTROLLER_BINDINGS,
+            'query_type' => QUERY_TYPES[$sort],
+            'page' => (int) $page,
+            'numperpage' => 50,
+            'return_details' => true,
+            'return_tags' => true,
+            'return_kv_tags' => true,
+            'return_vote_data' => true,
+            'requiredtags' => ['controller_neptune'],
+            'required_kv_tags' => [['key' => 'app', 'value' => $appid], ['key' => 'visibility', 'value' => 'public']],
+        ];
+        if ($sort === 'trend') $query['days'] = 30;
+        if ($searchText !== '') $query['search_text'] = $searchText;
+        $upstream = QUERY_FILES_URL . '?' . http_build_query(['key' => $key, 'input_json' => json_encode($query)]);
+        relay($upstream, 'application/json; charset=utf-8', 1800, $config);
         break;
 
     case 'community-layouts':

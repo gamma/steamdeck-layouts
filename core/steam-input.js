@@ -29,14 +29,37 @@ export const MODE_LABELS = {
   gyro_to_mouse: "Gyro To Mouse",
   gyro_to_joystick: "Gyro To Joystick",
   gyro_to_joystick_camera: "Gyro To Joystick Camera",
+  reference: "Reference",
   disabled: "None"
 };
+
+/** Group modes whose inputs are numbered menu entries. */
+export const MENU_MODES = new Set(["radial_menu", "touch_menu", "hotbar"]);
+
+/**
+ * Label for a sub-input; the group mode decides ambiguous names (a trigger's
+ * "click" is its full pull) and numbers menu entries from 1.
+ * @param {string} input
+ * @param {string} [mode]
+ */
+export function getInputLabel(input, mode = "") {
+  const menuItem = /^touch_menu_button_(\d+)$/.exec(input);
+  if (menuItem) {
+    // Radial menus number their slices from button 1; button 0 is the center.
+    const index = Number(menuItem[1]);
+    if (mode === "radial_menu") return index === 0 ? "Center" : `Item ${index}`;
+    return `Item ${index + 1}`;
+  }
+  if (input === "click" && mode === "trigger") return "Full Pull";
+  if (input === "switch_click") return "Digital";
+  return INPUT_LABELS[input] ?? input;
+}
 
 /** Sub-input labels for sticks, pads and triggers. */
 export const INPUT_LABELS = {
   click: "Click",
   touch: "Touch",
-  edge: "Pull",
+  edge: "Soft Pull",
   dpad_north: "Up",
   dpad_south: "Down",
   dpad_west: "Left",
@@ -100,6 +123,9 @@ export const CONTROL_SOURCES = {
 };
 
 const SOURCE_ALIASES = { left_joystick: "joystick" };
+
+/** Inputs of the switch group that belong to controls owning their own source. */
+const SWITCH_INPUTS_FOR_OWNED_CONTROLS = { left_trigger: "left_trigger", right_trigger: "right_trigger" };
 const INPUT_ALIASES = { button_back_left_lower: "button_back_left", button_back_right_lower: "button_back_right" };
 
 /** Default group mode per source when exporting a control without one. */
@@ -205,6 +231,14 @@ function applyGroup(preset, source, group, modeshift, controlIds, context) {
       addActivators(preset, ownerControl, readInputActivators(inputNode, { input: inputName, modeshift }, context));
     }
     return;
+  }
+
+  if (source === "switch") {
+    for (const [inputName, controlId] of Object.entries(SWITCH_INPUTS_FOR_OWNED_CONTROLS)) {
+      if (inputs[inputName] && controlIds.includes(controlId)) {
+        addActivators(preset, controlId, readInputActivators(inputs[inputName], { input: "switch_click", modeshift }, context));
+      }
+    }
   }
 
   for (const [controlId, entry] of Object.entries(CONTROL_SOURCES)) {
@@ -318,14 +352,18 @@ export function buildControllerConfig(layout) {
     for (const [controlId, entry] of Object.entries(CONTROL_SOURCES)) {
       const activators = Array.isArray(preset.bindings[controlId]) ? preset.bindings[controlId] : [];
       if (entry.input) {
-        const active = activators.filter((activator) => !activator.modeshift);
-        if (!active.length) continue;
-        (sharedInputs[entry.source] ??= {})[entry.input] = buildInputNode(active);
+        for (const modeshift of [false, true]) {
+          const subset = activators.filter((activator) => Boolean(activator.modeshift) === modeshift);
+          if (subset.length) (sharedInputs[`${entry.source}|${modeshift ? "modeshift" : ""}`] ??= {})[entry.input] = buildInputNode(subset);
+        }
         continue;
       }
+      const switchClicks = activators.filter((activator) => activator.input === "switch_click" && !activator.modeshift);
+      const switchInput = Object.keys(SWITCH_INPUTS_FOR_OWNED_CONTROLS).find((name) => SWITCH_INPUTS_FOR_OWNED_CONTROLS[name] === controlId);
+      if (switchClicks.length && switchInput) (sharedInputs["switch|"] ??= {})[switchInput] = buildInputNode(switchClicks);
       const modeEntry = preset.modes?.[controlId];
       for (const modeshift of [false, true]) {
-        const subset = activators.filter((activator) => Boolean(activator.modeshift) === modeshift);
+        const subset = activators.filter((activator) => Boolean(activator.modeshift) === modeshift && activator.input !== "switch_click");
         if (!subset.length && (modeshift || !modeEntry)) continue;
         const inputs = {};
         for (const activator of subset) {
@@ -337,8 +375,9 @@ export function buildControllerConfig(layout) {
         addGroup(entry.source, mode, inputNodes, modeshift ? undefined : modeEntry?.settings, modeshift);
       }
     }
-    for (const [source, inputs] of Object.entries(sharedInputs)) {
-      addGroup(source, DEFAULT_SOURCE_MODES[source], inputs);
+    for (const [key, inputs] of Object.entries(sharedInputs)) {
+      const [source, flag] = key.split("|");
+      addGroup(source, DEFAULT_SOURCE_MODES[source], inputs, undefined, flag === "modeshift");
     }
     if (preset.gyro?.mode) addGroup("gyro", preset.gyro.mode, {});
 

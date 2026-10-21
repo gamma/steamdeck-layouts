@@ -4,8 +4,9 @@
 
 import { describeBindingDsl } from "./binding-dsl.js";
 import { ACTIVATOR_TYPES, AXIS_SLOTS, axisBindingHasSlots } from "./layout-model.js";
-import { INPUT_LABELS, MODE_LABELS } from "./steam-input.js";
+import { MENU_MODES, MODE_LABELS, getInputLabel } from "./steam-input.js";
 
+const SELF_EVIDENT_MODES = new Set(["trigger", "four_buttons", "switches", "single_button"]);
 const TYPE_LABELS = Object.fromEntries(ACTIVATOR_TYPES.map((entry) => [entry.value, entry.label]));
 
 /** @param {any} step @param {Record<string, string>} [presetNames] */
@@ -17,18 +18,13 @@ export function describeStep(step, presetNames = {}) {
 /**
  * One line per activator, e.g. "Up · Long Press: Jump (Space)".
  * @param {any} activator
- * @param {{ presetNames?: Record<string, string> }} [options]
+ * @param {{ presetNames?: Record<string, string>, mode?: string }} [options]
  */
 export function describeActivator(activator, options = {}) {
   const qualifiers = [];
   if (activator.modeshift) qualifiers.push("Mode Shift");
-  if (activator.input === "edge" && (activator.type === "regular_press" || activator.type === "soft_press")) {
-    // Steam names the two trigger thresholds "Full Pull" and "Soft Pull".
-    qualifiers.push(activator.type === "soft_press" ? "Soft Pull" : "Full Pull");
-  } else {
-    if (activator.input) qualifiers.push(INPUT_LABELS[activator.input] ?? activator.input);
-    if (activator.type && activator.type !== "regular_press") qualifiers.push(TYPE_LABELS[activator.type] ?? activator.type);
-  }
+  if (activator.input) qualifiers.push(getInputLabel(activator.input, options.mode));
+  if (activator.type && activator.type !== "regular_press") qualifiers.push(TYPE_LABELS[activator.type] ?? activator.type);
   const steps = activator.actions.map((step) => {
     const text = describeStep(step, options.presetNames);
     return step.delayMs > 0 ? `${text} (+${step.delayMs}ms)` : text;
@@ -60,13 +56,27 @@ export function describeAxisBinding(axisBinding) {
  */
 export function describeControl(activators, modeEntry, options = {}) {
   const lines = [];
-  const mode = modeEntry?.mode;
-  if (mode && MODE_LABELS[mode]) lines.push(`Mode: ${MODE_LABELS[mode]}`);
-  for (const activator of activators ?? []) {
-    if (activator.actions?.length) lines.push(describeActivator(activator, options));
+  const mode = modeEntry?.mode ?? "";
+  const list = activators ?? [];
+  if (MENU_MODES.has(mode)) {
+    // Menu entries read best in their on-screen order.
+    const items = list.filter((activator) => /^touch_menu_button_\d+$/.test(activator.input));
+    const count = new Set(items.map((activator) => activator.input)).size;
+    lines.push(`Mode: ${MODE_LABELS[mode]}${count ? ` (${count} item${count === 1 ? "" : "s"})` : ""}`);
+    const order = (activator) => Number(/\d+$/.exec(activator.input)?.[0] ?? -1);
+    const sorted = [...list].sort((a, b) => (order(a) < 0 ? 1e6 : order(a)) - (order(b) < 0 ? 1e6 : order(b)));
+    for (const activator of sorted) {
+      if (activator.actions?.length) lines.push(describeActivator(activator, { ...options, mode }));
+    }
+    return lines;
+  }
+  for (const activator of list) {
+    if (activator.actions?.length) lines.push(describeActivator(activator, { ...options, mode }));
     const axis = describeAxisBinding(activator.axisBinding);
     if (axis) lines.push(axis);
   }
+  // A mode that only says "this is a trigger" is noise when nothing is bound.
+  if (mode && MODE_LABELS[mode] && (lines.length || !SELF_EVIDENT_MODES.has(mode))) lines.unshift(`Mode: ${MODE_LABELS[mode]}`);
   return lines;
 }
 
