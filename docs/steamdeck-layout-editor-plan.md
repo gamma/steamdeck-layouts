@@ -1,6 +1,17 @@
 # Steam Deck Layout Studio — Project Plan
 
-Status audit updated on 2026-04-07. Checked items are implemented in the current repo. Unchecked items are missing, incomplete, or only partially implemented.
+## Direction (decided 2026-10-21)
+
+The project is a **layout viewer first, editor second**. Steam's own configurator remains the place to build layouts; this app answers "what does this layout do?" before installing it.
+
+- **Core value:** a community layout or `.vdf` is shown completely (action sets, layers, modes, sub-inputs, gyro, author labels) on the 3D deck, as a printable cheat sheet, and as a per-control comparison.
+- **Sharing:** `?layout=<published file id>` links resolve through Steam's keyless `GetPublishedFileDetails`, independent of SteamInputDB.
+- **Proxy:** a thin, validating relay. Hosted as PHP (`proxy/api.php`, deployed at `sdl.gammaproduction.de/api/`) for GitHub Pages; `server.js` provides the same contract locally. All parsing runs client-side in `core/`.
+- **Code:** platform-independent ES modules in `core/` with `node --test`; no build step, no WASM.
+- **Editing:** kept for small tweaks; the VDF export writes Steam's structure but is not the focus.
+- **Next candidates:** Decky Loader plugin with an in-game cheat sheet and one-click apply. Community listings come from Steam's QueryFiles with a server-side key (SteamInputDB was dropped, 2026-10-22).
+
+Sections below are the original plan (status audit 2026-04-07) and are kept for reference.
 
 ## 1) Product vision
 Build a **modern, visual-first layout editor** for Steam Deck control schemes where users can:

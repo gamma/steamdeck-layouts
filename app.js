@@ -1,33 +1,53 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js";
+import { REMOTE_API_BASE, LOCAL_API_BASE } from "./config.js";
+import { mapQueryFilesLayouts, mapStoreSearchItems } from "./core/community.js";
+import { parseVdf, serializeVdf } from "./core/vdf.js";
+import { readControllerConfig, buildControllerConfig, getEffectiveBindings } from "./core/steam-input.js";
+import {
+  ACTIVATOR_TYPES,
+  AXIS_CONTROL_MODES,
+  activatorHasAction,
+  axisBindingHasSlots,
+  clampNumber,
+  createDefaultActivator,
+  normalizeActivatorActions,
+  normalizeBindingValue,
+  sanitizeAxisBinding
+} from "./core/layout-model.js";
+import { describeActivator, describeControl, describeLayoutOverview, describeStep, diffLayouts } from "./core/layout-summary.js";
+import { CHEAT_SHEET_SECTIONS, getDeckControl } from "./core/deck-controls.js";
 
-const DEFAULT_CONTROLS = [
-  { id: "left_bumper", name: "L1 Bumper", kind: "bumper", pos: [-1.9070061445236206, 1.124805967013041, -0.022185817981759705], size: [0.54, 0.18, 0.28], rotation: [-0.17970247776285814, -0.010401277067988768, 0.057192679649428126], scale: [1, 1, 0.7477379880849421] },
-  { id: "right_bumper", name: "R1 Bumper", kind: "bumper", pos: [1.8418513933817544, 1.1354556481043496, -0.038603511949380234], size: [0.54, 0.18, 0.28], rotation: [-0.18, 0, 0], scale: [0.9926492182394554, 0.5072335817822604, 0.6092462576274693] },
-  { id: "left_trigger", name: "L2 Trigger", kind: "trigger", pos: [-1.8448127508163452, 1.0392525593439736, -0.16875980297724405], size: [0.46, 0.22, 0.5], rotation: [-0.35, 0, 0], scale: [0.9175983495498393, 0.5701425059009136, 0.5204343747279385] },
-  { id: "right_trigger", name: "R2 Trigger", kind: "trigger", pos: [1.7487382491429646, 1.0724905729293823, -0.14798887570699054], size: [0.46, 0.22, 0.5], rotation: [-0.35, 0, 0], scale: [0.7706175670172294, 0.6249397365568353, 0.5326117517528911] },
-  { id: "left_stick", name: "Left Stick", kind: "stick", pos: [-1.5278548796971638, 0.8009234468142191, 0.3545029064019521], size: [0.24, 0.13, 24], rotation: [1.5707963267948966, 0, 0], scale: [0.5, 0.5, 0.5] },
-  { id: "right_stick", name: "Right Stick", kind: "stick", pos: [1.5005214214324951, 0.7763124505678812, 0.3545029064019521], size: [0.24, 0.13, 24], rotation: [1.5707963267948966, 0, 0], scale: [0.5, 0.5, 0.5] },
-  { id: "left_pad", name: "Left Touchpad", kind: "pad", pos: [-1.4848190148671467, 0.24328768750031787, 0.1973915994167328], size: [0.66, 0.5, 0.06], rotation: [0, 0, 0], scale: [0.666792935347466, 0.9095993327254873, 1.0052069336166984] },
-  { id: "right_pad", name: "Right Touchpad", kind: "pad", pos: [1.6002639532089233, 0.24328768750031787, 0.1973915994167328], size: [0.66, 0.5, 0.06], rotation: [0, 0, 0], scale: [0.6840672609280403, 0.9602273328163837, 1] },
-  { id: "view", name: "View Button", kind: "utility", pos: [-1.6787373622258503, 1.0720743338267007, 0.20313108960787454], size: [0.18, 0.08, 0.07], rotation: [0, 0, 0], scale: [0.7718260318261734, 1, 1] },
-  { id: "menu", name: "Menu Button", kind: "utility", pos: [1.6788936456044514, 1.0720743338267007, 0.20313108960787454], size: [0.18, 0.08, 0.07], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  { id: "steam", name: "Steam Button", kind: "utility", pos: [-1.4477551380793252, -0.03469822369515896, 0.1915585696697235], size: [0.14, 0.14, 0.06], rotation: [0, 0, 0], scale: [1.678227421016667, 0.6425742679181182, 1.3131953078484062] },
-  { id: "quick_access", name: "Quick Access Button", kind: "utility", pos: [1.447754899660746, -0.0643408065661788, 0.1915585696697235], size: [0.16, 0.12, 0.06], rotation: [0, 0, 0], scale: [1.188975197989932, 0.9017574539047117, 1] },
-  { id: "dpad_up", name: "D-Pad Up", kind: "dpad", pos: [-1.9162099361419678, 1.008418063322703, 0.22144445280234018], size: [0.18, 0.11, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  { id: "dpad_down", name: "D-Pad Down", kind: "dpad", pos: [-1.9381882747014363, 0.7662722865740458, 0.22154265642166138], size: [0.18, 0.11, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  { id: "dpad_left", name: "D-Pad Left", kind: "dpad", pos: [-2.0328590075174966, 0.896206259727478, 0.22153052687644958], size: [0.11, 0.18, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  { id: "dpad_right", name: "D-Pad Right", kind: "dpad", pos: [-1.7928784688313801, 0.8784178892771403, 0.2213268280029297], size: [0.11, 0.18, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
-  { id: "x", name: "X Button", kind: "face", pos: [1.805057962735494, 0.8825451532999674, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
-  { id: "y", name: "Y Button", kind: "face", pos: [1.9201560815175374, 0.9941441218058268, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
-  { id: "a", name: "A Button", kind: "face", pos: [1.9095153013865152, 0.7573799689610798, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
-  { id: "b", name: "B Button", kind: "face", pos: [2.0545754432678223, 0.8904473980267842, 0.20950340231259662], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
-  { id: "left_grip_4", name: "L4 Rear Button", kind: "rear", pos: [-1.6133379141489663, 0.27285367250442505, -0.1351798375447591], size: [0.34, 0.18, 0.14], rotation: [-0.07308699292290546, -0.46169632762870666, -0.02645219815081445], scale: [1, 1.4964297947289706, 1] },
-  { id: "left_grip_5", name: "L5 Rear Button", kind: "rear", pos: [-1.554385224978129, -0.031910067424178123, -0.09912295639514923], size: [0.34, 0.18, 0.14], rotation: [0.08677762251471617, -0.4604422579535512, 0.03279662112019297], scale: [1, 1.423939915867236, 0.45765880054170427] },
-  { id: "right_grip_4", name: "R4 Rear Button", kind: "rear", pos: [1.620943268140157, 0.3415716787179311, -0.14454569419225055], size: [0.34, 0.18, 0.14], rotation: [0.1155606541002835, 0.19637704731326103, -0.03940858525112614], scale: [0.6770387748281969, 1.3648758314937044, 0.3609690967760934] },
-  { id: "right_grip_5", name: "R5 Rear Button", kind: "rear", pos: [1.6039751768112183, 0.03561945694188277, -0.12487076967954636], size: [0.34, 0.18, 0.14], rotation: [0.14011519040806605, 0.6981317007977318, -0.09062077740806787], scale: [0.8530498643533708, 1.4298278821587411, 0.6161448889316428] },
+// Positions on the 3D shell; names and kinds come from core/deck-controls.js.
+const CONTROL_GEOMETRY = [
+  { id: "left_bumper", pos: [-1.9070061445236206, 1.124805967013041, -0.022185817981759705], size: [0.54, 0.18, 0.28], rotation: [-0.17970247776285814, -0.010401277067988768, 0.057192679649428126], scale: [1, 1, 0.7477379880849421] },
+  { id: "right_bumper", pos: [1.8418513933817544, 1.1354556481043496, -0.038603511949380234], size: [0.54, 0.18, 0.28], rotation: [-0.18, 0, 0], scale: [0.9926492182394554, 0.5072335817822604, 0.6092462576274693] },
+  { id: "left_trigger", pos: [-1.8448127508163452, 1.0392525593439736, -0.16875980297724405], size: [0.46, 0.22, 0.5], rotation: [-0.35, 0, 0], scale: [0.9175983495498393, 0.5701425059009136, 0.5204343747279385] },
+  { id: "right_trigger", pos: [1.7487382491429646, 1.0724905729293823, -0.14798887570699054], size: [0.46, 0.22, 0.5], rotation: [-0.35, 0, 0], scale: [0.7706175670172294, 0.6249397365568353, 0.5326117517528911] },
+  { id: "left_stick", pos: [-1.5278548796971638, 0.8009234468142191, 0.3545029064019521], size: [0.24, 0.13, 24], rotation: [1.5707963267948966, 0, 0], scale: [0.5, 0.5, 0.5] },
+  { id: "right_stick", pos: [1.5005214214324951, 0.7763124505678812, 0.3545029064019521], size: [0.24, 0.13, 24], rotation: [1.5707963267948966, 0, 0], scale: [0.5, 0.5, 0.5] },
+  { id: "left_pad", pos: [-1.4848190148671467, 0.24328768750031787, 0.1973915994167328], size: [0.66, 0.5, 0.06], rotation: [0, 0, 0], scale: [0.666792935347466, 0.9095993327254873, 1.0052069336166984] },
+  { id: "right_pad", pos: [1.6002639532089233, 0.24328768750031787, 0.1973915994167328], size: [0.66, 0.5, 0.06], rotation: [0, 0, 0], scale: [0.6840672609280403, 0.9602273328163837, 1] },
+  { id: "view", pos: [-1.6787373622258503, 1.0720743338267007, 0.20313108960787454], size: [0.18, 0.08, 0.07], rotation: [0, 0, 0], scale: [0.7718260318261734, 1, 1] },
+  { id: "menu", pos: [1.6788936456044514, 1.0720743338267007, 0.20313108960787454], size: [0.18, 0.08, 0.07], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  { id: "steam", pos: [-1.4477551380793252, -0.03469822369515896, 0.1915585696697235], size: [0.14, 0.14, 0.06], rotation: [0, 0, 0], scale: [1.678227421016667, 0.6425742679181182, 1.3131953078484062] },
+  { id: "quick_access", pos: [1.447754899660746, -0.0643408065661788, 0.1915585696697235], size: [0.16, 0.12, 0.06], rotation: [0, 0, 0], scale: [1.188975197989932, 0.9017574539047117, 1] },
+  { id: "dpad_up", pos: [-1.9162099361419678, 1.008418063322703, 0.22144445280234018], size: [0.18, 0.11, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  { id: "dpad_down", pos: [-1.9381882747014363, 0.7662722865740458, 0.22154265642166138], size: [0.18, 0.11, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  { id: "dpad_left", pos: [-2.0328590075174966, 0.896206259727478, 0.22153052687644958], size: [0.11, 0.18, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  { id: "dpad_right", pos: [-1.7928784688313801, 0.8784178892771403, 0.2213268280029297], size: [0.11, 0.18, 0.045], rotation: [0, 0, 0], scale: [1, 1, 1] },
+  { id: "x", pos: [1.805057962735494, 0.8825451532999674, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
+  { id: "y", pos: [1.9201560815175374, 0.9941441218058268, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
+  { id: "a", pos: [1.9095153013865152, 0.7573799689610798, 0.2214406927426656], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
+  { id: "b", pos: [2.0545754432678223, 0.8904473980267842, 0.20950340231259662], size: [0.09, 0.06, 20], rotation: [1.5707963267948966, 0, 0], scale: [1, 1, 1] },
+  { id: "left_grip_4", pos: [-1.6133379141489663, 0.27285367250442505, -0.1351798375447591], size: [0.34, 0.18, 0.14], rotation: [-0.07308699292290546, -0.46169632762870666, -0.02645219815081445], scale: [1, 1.4964297947289706, 1] },
+  { id: "left_grip_5", pos: [-1.554385224978129, -0.031910067424178123, -0.09912295639514923], size: [0.34, 0.18, 0.14], rotation: [0.08677762251471617, -0.4604422579535512, 0.03279662112019297], scale: [1, 1.423939915867236, 0.45765880054170427] },
+  { id: "right_grip_4", pos: [1.620943268140157, 0.3415716787179311, -0.14454569419225055], size: [0.34, 0.18, 0.14], rotation: [0.1155606541002835, 0.19637704731326103, -0.03940858525112614], scale: [0.6770387748281969, 1.3648758314937044, 0.3609690967760934] },
+  { id: "right_grip_5", pos: [1.6039751768112183, 0.03561945694188277, -0.12487076967954636], size: [0.34, 0.18, 0.14], rotation: [0.14011519040806605, 0.6981317007977318, -0.09062077740806787], scale: [0.8530498643533708, 1.4298278821587411, 0.6161448889316428] },
 ];
+
+const DEFAULT_CONTROLS = CONTROL_GEOMETRY.map((entry) => ({ ...getDeckControl(entry.id), ...entry }));
 
 const controls = DEFAULT_CONTROLS.map((control) => ({
   ...control,
@@ -59,39 +79,31 @@ const state = {
   bindingEditorAxisSlot: "click",
   layoutPersistenceReady: false,
   communityDialogOpen: false,
-  bindings: Object.fromEntries(controls.map((c) => [c.id, []]))
+  // Action sets and layers; a plain layout has a single "Default" set.
+  presets: [createEmptyPreset()],
+  activePresetIndex: 0,
+  layoutTitle: "",
+  layoutDescription: "",
+  // Increments whenever the user loads or resets a layout, so slower
+  // background loads can tell they are stale.
+  layoutGeneration: 0,
+  comparison: null
 };
+const requestSequence = new Map();
 
 const MODEL_URL = "./assets/steamdeck_shell.stl";
 const DEFAULT_LAYOUT_URL = "./saved-layouts/steamdeck-layout-2026-03-11.json";
+const DEFAULT_EXPORT_NAME = "Steam Deck Layout Studio export";
+const STEAM_CONTROLLER_CONFIGS_APP_ID = 241100;
 const TARGET_MODEL_WIDTH = 4.35;
 const FALLBACK_BODY_SIZE = [4.3, 1.8, 1.25];
 const DEBUG_KEY_SEQUENCE = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M"];
 const CRITICAL_CONTROL_IDS = ["left_stick", "right_stick", "a", "b", "x", "y", "left_trigger", "right_trigger", "left_bumper", "right_bumper", "menu", "view"];
-const AXIS_CONTROL_MODES = [
-  { value: "mouse_move", label: "Mouse Move" },
-  { value: "digital_directions", label: "Digital Directions" },
-  { value: "hybrid", label: "Hybrid" }
-];
-const AXIS_CONTROL_SLOTS = [
-  { value: "click", label: "Click" },
-  { value: "move", label: "Move" },
-  { value: "up", label: "Up" },
-  { value: "down", label: "Down" },
-  { value: "left", label: "Left" },
-  { value: "right", label: "Right" }
-];
-const ACTIVATOR_TYPES = [
-  { value: "regular_press", label: "Full Press" },
-  { value: "double_press", label: "Double Press" },
-  { value: "long_press", label: "Long Press" },
-  { value: "start_press", label: "Start Press" },
-  { value: "release_press", label: "Release Press" },
-  { value: "chorded_press", label: "Chorded Press" }
-];
 const MODIFIER_TOKENS = ["Ctrl", "Shift", "Alt", "Meta"];
 const THEME_STORAGE_KEY = "steamdeck-layout-theme";
 const DRAFT_STORAGE_KEY = "steamdeck-layout-draft";
+const API_BASE_STORAGE_KEY = "steamdeck-layout-api-base";
+const API_BASE = resolveApiBase();
 const themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const el = {
@@ -106,6 +118,7 @@ const el = {
   gameResultsList: document.getElementById("gameResultsList"),
   layoutResultsList: document.getElementById("layoutResultsList"),
   layoutStatus: document.getElementById("layoutStatus"),
+  appStatus: document.getElementById("appStatus"),
   openCommunityBtn: document.getElementById("openCommunityBtn"),
   communityDialogBackdrop: document.getElementById("communityDialogBackdrop"),
   communityDialogCloseBtn: document.getElementById("communityDialogCloseBtn"),
@@ -114,6 +127,25 @@ const el = {
   layoutDetailDescription: document.getElementById("layoutDetailDescription"),
   layoutDetailTags: document.getElementById("layoutDetailTags"),
   dialogLoadLayoutBtn: document.getElementById("dialogLoadLayoutBtn"),
+  dialogCompareLayoutBtn: document.getElementById("dialogCompareLayoutBtn"),
+  layoutOverview: document.getElementById("layoutOverview"),
+  copyLayoutLinkBtn: document.getElementById("copyLayoutLinkBtn"),
+  presetSelectLabel: document.getElementById("presetSelectLabel"),
+  presetSelect: document.getElementById("presetSelect"),
+  cheatSheetBtn: document.getElementById("cheatSheetBtn"),
+  cheatSheetBackdrop: document.getElementById("cheatSheetBackdrop"),
+  cheatSheetTitle: document.getElementById("cheatSheetTitle"),
+  cheatSheetBody: document.getElementById("cheatSheetBody"),
+  cheatSheetPrintBtn: document.getElementById("cheatSheetPrintBtn"),
+  cheatSheetCopyBtn: document.getElementById("cheatSheetCopyBtn"),
+  cheatSheetCloseBtn: document.getElementById("cheatSheetCloseBtn"),
+  compareBtn: document.getElementById("compareBtn"),
+  compareBackdrop: document.getElementById("compareBackdrop"),
+  compareCloseBtn: document.getElementById("compareCloseBtn"),
+  compareSelectA: document.getElementById("compareSelectA"),
+  compareSelectB: document.getElementById("compareSelectB"),
+  compareSummary: document.getElementById("compareSummary"),
+  compareList: document.getElementById("compareList"),
   currentCommunitySummary: document.getElementById("currentCommunitySummary"),
   bindingsTable: document.getElementById("bindingsTable"),
   selectionInfo: document.getElementById("selectionInfo"),
@@ -220,6 +252,8 @@ let shellFaceNormals = [];
 let shellFaceAdjacency = [];
 let shellPreviewFaces = new Set();
 let pendingPaintRegions = null;
+let overlayDirty = true;
+let modelStatusMessage = "Loading Steam Deck shell model…";
 let isPainting = false;
 let selectionAnimation = null;
 let sceneRef = null;
@@ -282,23 +316,17 @@ function initUI() {
     event.preventDefault();
     el.dropHint.classList.remove("active");
     const file = event.dataTransfer?.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-      applyLayoutData(json, true);
-      renderBindings();
-      updateSelectionInfo();
-      renderBindingOverlays();
-      setLayoutStatus("Layout loaded from drop.", false);
-    } catch {
-      setLayoutStatus("Invalid JSON dropped.", true);
-    }
+    if (file) await handleLayoutFile(file, "drop");
   });
 
   el.newLayoutBtn.addEventListener("click", () => {
+    state.layoutGeneration += 1;
     state.loadedLayoutMeta = null;
-    state.bindings = Object.fromEntries(controls.map((c) => [c.id, []]));
+    state.layoutTitle = "";
+    state.layoutDescription = "";
+    state.presets = [createEmptyPreset()];
+    state.activePresetIndex = 0;
+    replaceLayoutUrlParam(null);
     controls.forEach((control) => {
       const defaults = getDefaultControl(control.id);
       control.pos = [...defaults.pos];
@@ -307,9 +335,45 @@ function initUI() {
     });
     clearAllPaintRegions();
     selectControl(null);
-    renderBindings();
+    renderPresetSelect();
+    updateCommunitySummary();
+    refreshBindingViews();
   });
   el.debugMapBtn.addEventListener("click", applyDebugBindings);
+  el.presetSelect.addEventListener("change", () => {
+    state.activePresetIndex = clamp(Number.parseInt(el.presetSelect.value, 10) || 0, 0, state.presets.length - 1);
+    refreshBindingViews();
+    if (state.bindingEditorOpen) renderBindingEditor();
+  });
+  el.copyLayoutLinkBtn.addEventListener("click", copyLayoutLink);
+  el.cheatSheetBtn.addEventListener("click", showCheatSheet);
+  el.cheatSheetCloseBtn.addEventListener("click", () => closeDialog(el.cheatSheetBackdrop));
+  el.cheatSheetPrintBtn.addEventListener("click", () => window.print());
+  el.cheatSheetCopyBtn.addEventListener("click", copyCheatSheetText);
+  el.compareBtn.addEventListener("click", () => showCompareDialog());
+  el.compareCloseBtn.addEventListener("click", () => closeDialog(el.compareBackdrop));
+  el.compareSelectA.addEventListener("change", renderComparison);
+  el.compareSelectB.addEventListener("change", renderComparison);
+  el.dialogCompareLayoutBtn.addEventListener("click", () => {
+    if (state.selectedLayoutDetail) void compareWithCommunityLayout(state.selectedLayoutDetail);
+  });
+  for (const backdrop of [el.cheatSheetBackdrop, el.compareBackdrop]) {
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeDialog(backdrop);
+    });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    // The key-capture field in the binding editor records Escape as a key.
+    if (event.target === el.bindingEditorStepInput) return;
+    const open = [el.bindingEditorBackdrop, el.compareBackdrop, el.cheatSheetBackdrop, el.communityDialogBackdrop]
+      .find((backdrop) => !backdrop.classList.contains("hidden"));
+    if (!open) return;
+    event.preventDefault();
+    if (open === el.bindingEditorBackdrop) hideBindingEditor();
+    else if (open === el.communityDialogBackdrop) hideCommunityDialog();
+    else closeDialog(open);
+  });
 
   el.saveLayoutBtn.addEventListener("click", saveLayoutToStorage);
   el.exportVdfBtn.addEventListener("click", exportCurrentLayoutVdf);
@@ -317,12 +381,11 @@ function initUI() {
   el.themeAutoBtn.addEventListener("click", () => setThemeMode("auto"));
   el.themeLightBtn.addEventListener("click", () => setThemeMode("light"));
   el.themeDarkBtn.addEventListener("click", () => setThemeMode("dark"));
-  el.fileInput.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    await handleLayoutText(text);
-    e.target.value = "";
+  el.fileInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    // Reset first so choosing the same file again still fires "change".
+    event.target.value = "";
+    if (file) await handleLayoutFile(file);
   });
 
   el.paintRegionBtn.addEventListener("click", togglePaintMode);
@@ -337,11 +400,302 @@ function initUI() {
 
 async function bootstrapApp() {
   const restored = restorePersistedLayoutState();
-  if (!restored) {
-    await loadDefaultLayout();
-  }
+  const deepLinkId = new URLSearchParams(window.location.search).get("layout")?.trim() ?? "";
+  if (!restored && !deepLinkId) await loadDefaultLayout();
+  renderPresetSelect();
+  refreshBindingViews();
   state.layoutPersistenceReady = true;
+  if (deepLinkId) {
+    const validId = /^\d{1,20}$/.test(deepLinkId);
+    const loaded = validId && await loadLayoutFromDeepLink(deepLinkId);
+    if (!loaded) {
+      if (!validId) setLayoutStatus("The shared link does not contain a valid layout id.", true);
+      replaceLayoutUrlParam(null);
+      if (!restored) await loadDefaultLayout();
+    }
+  }
   schedulePersistCurrentLayoutState();
+}
+
+/** Loads a shared layout by its Steam published file id (?layout=<id>). */
+async function loadLayoutFromDeepLink(fileId) {
+  setLayoutStatus(`Loading shared layout ${fileId}...`);
+  try {
+    const response = await fetch(apiUrl("file-details", { id: fileId }));
+    if (!response.ok) throw new Error("Details request failed");
+    const details = (await response.json())?.response?.publishedfiledetails?.[0];
+    if (details?.result !== 1 || details.creator_app_id !== STEAM_CONTROLLER_CONFIGS_APP_ID || !details.file_url) {
+      throw new Error("Not a controller layout");
+    }
+    const meta = {
+      title: details.title || `Layout ${fileId}`,
+      description: details.description || "",
+      file_id: String(details.publishedfileid ?? fileId),
+      file_url: details.file_url,
+      app_id: details.consumer_app_id,
+      subscriptions: Number(details.lifetime_subscriptions ?? details.subscriptions ?? 0),
+      // Only feature tags ("feature_gyro") describe the layout itself.
+      tags: Array.isArray(details.tags)
+        ? details.tags.map((tag) => String(tag?.tag ?? tag)).filter((tag) => tag.startsWith("feature_")).map((tag) => tag.slice(8))
+        : []
+    };
+    const vdf = await fetchCommunityLayoutVdf(meta);
+    backupDraft("before-link");
+    applyVdfLayout(vdf, meta);
+    return true;
+  } catch {
+    setLayoutStatus(`Shared layout ${fileId} could not be loaded.`, true);
+    return false;
+  }
+}
+
+function backupDraft(suffix) {
+  try {
+    const current = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (current) localStorage.setItem(`${DRAFT_STORAGE_KEY}-${suffix}`, current);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function replaceLayoutUrlParam(fileId) {
+  const url = new URL(window.location.href);
+  if (fileId) url.searchParams.set("layout", String(fileId));
+  else url.searchParams.delete("layout");
+  if (url.toString() !== window.location.href) window.history.replaceState(null, "", url);
+  el.copyLayoutLinkBtn.hidden = !fileId;
+}
+
+async function copyLayoutLink() {
+  const fileId = state.loadedLayoutMeta?.file_id;
+  if (!fileId) return;
+  const url = new URL(window.location.pathname, window.location.origin);
+  url.searchParams.set("layout", String(fileId));
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    flashButtonLabel(el.copyLayoutLinkBtn, "Link copied");
+  } catch {
+    window.prompt("Copy this link:", url.toString());
+  }
+}
+
+function flashButtonLabel(button, label) {
+  const original = button.dataset.label ?? button.textContent;
+  button.dataset.label = original;
+  button.textContent = label;
+  setTimeout(() => {
+    button.textContent = original;
+  }, 1600);
+}
+
+function renderPresetSelect() {
+  el.presetSelect.innerHTML = "";
+  state.presets.forEach((preset, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = preset.kind === "layer" ? `↳ ${preset.title} (layer)` : preset.title;
+    el.presetSelect.appendChild(option);
+  });
+  el.presetSelect.value = String(state.activePresetIndex);
+  el.presetSelectLabel.hidden = state.presets.length < 2;
+}
+
+function getEffectivePresetView(presets, preset) {
+  const parent = preset.kind === "layer" ? presets.find((candidate) => candidate.name === preset.parentName) : null;
+  return {
+    ...preset,
+    bindings: getEffectiveBindings(presets, preset),
+    modes: { ...(parent?.modes ?? {}), ...preset.modes },
+    gyro: preset.gyro ?? parent?.gyro ?? null
+  };
+}
+
+function renderLayoutOverview() {
+  const view = getEffectivePresetView(state.presets, getActivePreset());
+  el.layoutOverview.textContent = describeLayoutOverview(view, controls, { presetNames: getPresetNames() });
+}
+
+// Dialogs: remember the opener, move focus in, and give it back on close.
+const dialogOpeners = new Map();
+
+function openDialog(backdrop, focusTarget = null) {
+  dialogOpeners.set(backdrop, document.activeElement);
+  backdrop.classList.remove("hidden");
+  const target = focusTarget ?? backdrop.querySelector("button, input, select, textarea");
+  requestAnimationFrame(() => target?.focus());
+}
+
+function closeDialog(backdrop) {
+  backdrop.classList.add("hidden");
+  restoreFocus(backdrop);
+}
+
+function restoreFocus(backdrop) {
+  const opener = dialogOpeners.get(backdrop);
+  dialogOpeners.delete(backdrop);
+  if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus();
+}
+
+function getCheatSheetModel() {
+  const preset = getActivePreset();
+  const view = getEffectivePresetView(state.presets, preset);
+  const options = { presetNames: getPresetNames() };
+  const title = state.layoutTitle || state.loadedLayoutMeta?.title || "Steam Deck layout";
+  const subtitle = state.presets.length > 1 ? preset.title : "";
+  const sections = CHEAT_SHEET_SECTIONS.map((section) => ({
+    title: section.title,
+    rows: section.ids
+      .map((id) => getControlById(id))
+      .filter(Boolean)
+      .map((control) => ({ name: control.name, lines: describeControl(view.bindings[control.id], view.modes[control.id], options) }))
+      .filter((row) => row.lines.length)
+  })).filter((section) => section.rows.length);
+  return { title, subtitle, overview: describeLayoutOverview(view, controls, options), sections };
+}
+
+function showCheatSheet() {
+  const model = getCheatSheetModel();
+  el.cheatSheetTitle.textContent = model.subtitle ? `${model.title} — ${model.subtitle}` : model.title;
+  el.cheatSheetBody.innerHTML = "";
+  const overview = document.createElement("p");
+  overview.className = "cheat-sheet-overview";
+  overview.textContent = model.overview;
+  el.cheatSheetBody.appendChild(overview);
+  const grid = document.createElement("div");
+  grid.className = "cheat-sheet-grid";
+  for (const section of model.sections) {
+    const block = document.createElement("section");
+    const heading = document.createElement("h3");
+    heading.textContent = section.title;
+    block.appendChild(heading);
+    const list = document.createElement("dl");
+    for (const row of section.rows) {
+      const term = document.createElement("dt");
+      term.textContent = row.name;
+      list.appendChild(term);
+      for (const line of row.lines) {
+        const detail = document.createElement("dd");
+        detail.textContent = line;
+        list.appendChild(detail);
+      }
+    }
+    block.appendChild(list);
+    grid.appendChild(block);
+  }
+  el.cheatSheetBody.appendChild(grid);
+  openDialog(el.cheatSheetBackdrop, el.cheatSheetPrintBtn);
+}
+
+async function copyCheatSheetText() {
+  const model = getCheatSheetModel();
+  const lines = [model.subtitle ? `${model.title} — ${model.subtitle}` : model.title, "", model.overview];
+  for (const section of model.sections) {
+    lines.push("", section.title.toUpperCase());
+    for (const row of section.rows) {
+      lines.push(`${row.name}: ${row.lines.join("; ")}`);
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(lines.join("\n"));
+    flashButtonLabel(el.cheatSheetCopyBtn, "Copied");
+  } catch {
+    setLayoutStatus("Copying to the clipboard is not allowed here.", true);
+  }
+}
+
+function getCompareSources() {
+  const sources = state.presets.map((preset, index) => ({
+    key: `current:${index}`,
+    label: `${state.layoutTitle || "Current layout"} · ${preset.title}`,
+    view: getEffectivePresetView(state.presets, preset)
+  }));
+  if (state.comparison) {
+    state.comparison.presets.forEach((preset, index) => {
+      sources.push({
+        key: `other:${index}`,
+        label: `${state.comparison.title} · ${preset.title}`,
+        view: getEffectivePresetView(state.comparison.presets, preset)
+      });
+    });
+  }
+  return sources;
+}
+
+function showCompareDialog(preferredB = null) {
+  const sources = getCompareSources();
+  for (const select of [el.compareSelectA, el.compareSelectB]) {
+    select.innerHTML = "";
+    for (const source of sources) {
+      const option = document.createElement("option");
+      option.value = source.key;
+      option.textContent = source.label;
+      select.appendChild(option);
+    }
+  }
+  el.compareSelectA.value = `current:${state.activePresetIndex}`;
+  const fallbackB = sources.find((source) => source.key !== el.compareSelectA.value)?.key ?? el.compareSelectA.value;
+  el.compareSelectB.value = preferredB && sources.some((source) => source.key === preferredB) ? preferredB : fallbackB;
+  renderComparison();
+  openDialog(el.compareBackdrop, el.compareSelectB);
+}
+
+function renderComparison() {
+  const sources = getCompareSources();
+  const a = sources.find((source) => source.key === el.compareSelectA.value);
+  const b = sources.find((source) => source.key === el.compareSelectB.value);
+  el.compareList.innerHTML = "";
+  if (!a || !b || a.key === b.key) {
+    el.compareSummary.textContent = sources.length < 2
+      ? "Load a layout with several action sets, or pick “Compare” on a community layout, to compare."
+      : "Pick two different layouts to compare.";
+    return;
+  }
+  const options = { presetNames: getPresetNames() };
+  const changes = diffLayouts(a.view, b.view, controls, options);
+  const gyroA = a.view.gyro?.mode ?? "";
+  const gyroB = b.view.gyro?.mode ?? "";
+  el.compareSummary.textContent = changes.length || gyroA !== gyroB
+    ? `${changes.length} control${changes.length === 1 ? " differs" : "s differ"}${gyroA !== gyroB ? "; gyro differs" : ""}.`
+    : "No differences.";
+  for (const change of changes) {
+    const item = document.createElement("li");
+    item.className = `compare-item ${change.status}`;
+    const name = document.createElement("strong");
+    name.textContent = change.name;
+    item.appendChild(name);
+    for (const [label, lines] of [["Before", change.before], ["After", change.after]]) {
+      const column = document.createElement("div");
+      column.className = "compare-column";
+      const caption = document.createElement("span");
+      caption.className = "compare-caption";
+      caption.textContent = label;
+      column.appendChild(caption);
+      for (const line of lines.length ? lines : ["Unmapped"]) {
+        const text = document.createElement("div");
+        text.textContent = line;
+        column.appendChild(text);
+      }
+      item.appendChild(column);
+    }
+    el.compareList.appendChild(item);
+  }
+}
+
+async function compareWithCommunityLayout(layoutMeta) {
+  const isLatest = beginRequest("layout-compare");
+  setLayoutStatus(`Loading ${layoutMeta.title} for comparison...`);
+  try {
+    const vdf = await fetchCommunityLayoutVdf(layoutMeta);
+    const doc = readControllerConfig(parseVdf(vdf), controls.map((control) => control.id));
+    if (!isLatest()) return;
+    if (!doc.presets.length) throw new Error("No action sets");
+    state.comparison = { title: layoutMeta.title || doc.title || "Community layout", presets: doc.presets };
+    setLayoutStatus(`Comparing with ${state.comparison.title}.`, false);
+    hideCommunityDialog();
+    showCompareDialog("other:0");
+  } catch {
+    if (isLatest()) setLayoutStatus(`Failed to load ${layoutMeta.title} for comparison.`, true);
+  }
 }
 
 function initTheme() {
@@ -359,6 +713,39 @@ function initTheme() {
   } else if (typeof themeMediaQuery.addListener === "function") {
     themeMediaQuery.addListener(handleThemeChange);
   }
+}
+
+function resolveApiBase() {
+  let override = new URLSearchParams(window.location.search).get("api")?.trim() ?? "";
+  try {
+    if (override === "default") {
+      localStorage.removeItem(API_BASE_STORAGE_KEY);
+      override = "";
+    } else if (override) {
+      localStorage.setItem(API_BASE_STORAGE_KEY, override);
+    } else {
+      override = localStorage.getItem(API_BASE_STORAGE_KEY) ?? "";
+    }
+  } catch {
+    // Storage unavailable: the override applies to this page load only.
+  }
+  if (override === "default") override = "";
+  if (override) return override;
+  const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  return isLocal || !REMOTE_API_BASE ? LOCAL_API_BASE : REMOTE_API_BASE;
+}
+
+function apiUrl(endpoint, params) {
+  const url = new URL(API_BASE, window.location.href);
+  url.searchParams.set("endpoint", endpoint);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
+async function fetchCommunityLayoutVdf(layoutMeta) {
+  const response = await fetch(apiUrl("layout-file", { url: layoutMeta.file_url }));
+  if (!response.ok) throw new Error("Layout fetch failed");
+  return response.text();
 }
 
 function readThemeMode() {
@@ -417,7 +804,8 @@ function updateDeckSceneTheme() {
   if (!sceneRef) return;
   const bg = readCssVar("--deck-bg") || "#070c18";
   sceneRef.background = null;
-  sceneRef.fog = new THREE.Fog(bg, 5.5, 11);
+  if (sceneRef.fog) sceneRef.fog.color.set(bg);
+  else sceneRef.fog = new THREE.Fog(bg, 5.5, 11);
   updateDeckVisualTheme();
 }
 
@@ -479,232 +867,181 @@ function syncDeckToolsVisibility() {
   el.deckToolsToggleBtn.setAttribute("aria-expanded", String(state.deckToolsOpen));
 }
 
+/**
+ * Applies a saved layout (format 1: flat bindings, format 2: presets).
+ * Everything is parsed before any state changes, so a bad file leaves the
+ * current layout untouched. Calibration (positions, paint regions) only
+ * changes when the file carries it.
+ */
 function applyLayoutData(json, requireBindings = true) {
-  if (requireBindings && (!json.bindings || typeof json.bindings !== "object")) {
-    throw new Error("Invalid layout file");
-  }
+  if (!json || typeof json !== "object") throw new Error("Invalid layout file");
+  const presets = parseLayoutPresets(json);
+  if (requireBindings && !presets) throw new Error("Invalid layout file");
 
-  state.loadedLayoutMeta = json.loadedLayoutMeta ?? null;
-  pendingPaintRegions = json.paintRegions && typeof json.paintRegions === "object" ? json.paintRegions : null;
-  for (const c of controls) {
-    if (json.bindings && typeof json.bindings === "object") {
-      state.bindings[c.id] = normalizeBindingValue(json.bindings[c.id]);
-    }
-    const savedPos = json.controlPositions?.[c.id];
-    if (Array.isArray(savedPos) && savedPos.length === 3 && savedPos.every((value) => Number.isFinite(value))) {
-      c.pos = [...savedPos];
-    }
-    const savedRotation = json.controlRotations?.[c.id];
-    if (Array.isArray(savedRotation) && savedRotation.length === 3 && savedRotation.every((value) => Number.isFinite(value))) {
-      c.rotation = [...savedRotation];
-    }
-    const savedScale = json.controlScales?.[c.id];
-    if (Array.isArray(savedScale) && savedScale.length === 3 && savedScale.every((value) => Number.isFinite(value) && value > 0)) {
-      c.scale = [...savedScale];
-    }
+  const calibration = controls.map((control) => ({
+    control,
+    pos: readVector(json.controlPositions?.[control.id]),
+    rotation: readVector(json.controlRotations?.[control.id]),
+    scale: readVector(json.controlScales?.[control.id], (value) => value > 0)
+  }));
+
+  if (presets) {
+    state.presets = presets;
+    state.activePresetIndex = clamp(Math.floor(Number(json.activePresetIndex) || 0), 0, presets.length - 1);
   }
-  applyPendingPaintRegions();
+  state.layoutTitle = typeof json.name === "string" && json.name !== DEFAULT_EXPORT_NAME ? json.name : "";
+  state.layoutDescription = typeof json.description === "string" ? json.description : "";
+  state.loadedLayoutMeta = json.loadedLayoutMeta && typeof json.loadedLayoutMeta === "object" ? json.loadedLayoutMeta : null;
+  for (const entry of calibration) {
+    if (entry.pos) entry.control.pos = entry.pos;
+    if (entry.rotation) entry.control.rotation = entry.rotation;
+    if (entry.scale) entry.control.scale = entry.scale;
+  }
+  if (json.paintRegions && typeof json.paintRegions === "object") {
+    pendingPaintRegions = json.paintRegions;
+    applyPendingPaintRegions();
+  }
+  renderPresetSelect();
   updateCommunitySummary();
   schedulePersistCurrentLayoutState();
 }
 
+function parseLayoutPresets(json) {
+  if (Array.isArray(json.presets) && json.presets.length) {
+    return json.presets.map((preset, index) => ({
+      id: typeof preset?.id === "string" ? preset.id : String(index),
+      name: typeof preset?.name === "string" && preset.name ? preset.name : index === 0 ? "Default" : `Preset_${index}`,
+      title: typeof preset?.title === "string" && preset.title ? preset.title : preset?.name || "Default",
+      kind: preset?.kind === "layer" ? "layer" : "set",
+      parentName: typeof preset?.parentName === "string" ? preset.parentName : "",
+      bindings: normalizeBindingsRecord(preset?.bindings),
+      modes: preset?.modes && typeof preset.modes === "object" ? structuredClone(preset.modes) : {},
+      gyro: preset?.gyro?.mode ? { mode: String(preset.gyro.mode) } : null
+    }));
+  }
+  if (json.bindings && typeof json.bindings === "object") {
+    return [{ ...createEmptyPreset(), bindings: normalizeBindingsRecord(json.bindings) }];
+  }
+  return null;
+}
+
+function normalizeBindingsRecord(bindings) {
+  const result = {};
+  if (!bindings || typeof bindings !== "object") return result;
+  for (const control of controls) {
+    if (bindings[control.id] === undefined) continue;
+    const activators = normalizeBindingValue(bindings[control.id]);
+    if (activators.length) result[control.id] = activators;
+  }
+  return result;
+}
+
+function readVector(value, isValid = () => true) {
+  return Array.isArray(value) && value.length === 3 && value.every((entry) => Number.isFinite(entry) && isValid(entry))
+    ? [...value]
+    : null;
+}
+
 async function loadDefaultLayout() {
+  const generation = state.layoutGeneration;
   try {
     const response = await fetch(DEFAULT_LAYOUT_URL, { cache: "no-store" });
     if (!response.ok) return;
     const json = await response.json();
+    // The user loaded something while the default was still downloading.
+    if (generation !== state.layoutGeneration) return;
     applyLayoutData(json, false);
-    renderBindings();
-    updateSelectionInfo();
+    refreshBindingViews();
   } catch {
     // Keep the app usable even if the default checkpoint is missing.
   }
 }
 
 function restorePersistedLayoutState() {
+  let stored = null;
   try {
-    const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!stored) return false;
+    stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+  if (!stored) return false;
+  try {
     const payload = JSON.parse(stored);
     const layoutPayload = payload?.payload ?? payload;
-    if (!layoutPayload || typeof layoutPayload !== "object") return false;
-    if (typeof payload?.ui?.themeMode === "string") {
-      applyThemeMode(payload.ui.themeMode, false);
-    }
+    if (!layoutPayload || typeof layoutPayload !== "object") throw new Error("Invalid draft");
     applyLayoutData(layoutPayload, false);
-    if (typeof payload?.ui?.selectedControlId === "string" && getControlById(payload.ui.selectedControlId)) {
-      state.selectedControlId = payload.ui.selectedControlId;
-      state.selectedActivatorIndex = clampNumber(payload.ui.selectedActivatorIndex, 0, 99, 0);
+    const ui = payload?.ui;
+    if (typeof ui?.selectedControlId === "string" && getControlById(ui.selectedControlId)) {
+      state.selectedControlId = ui.selectedControlId;
+      state.selectedActivatorIndex = clampNumber(ui.selectedActivatorIndex, 0, 99, 0);
     }
-    renderBindings();
-    updateSelectionInfo();
-    renderBindingOverlays();
+    refreshBindingViews();
     setLayoutStatus("Restored local draft from browser storage.", false);
     return true;
   } catch {
+    // Keep the unreadable draft instead of overwriting it with the default.
+    try {
+      localStorage.setItem(`${DRAFT_STORAGE_KEY}-unreadable`, stored);
+    } catch {
+      // Ignore storage failures.
+    }
     return false;
   }
 }
 
-function normalizeBindingValue(value) {
-  if (Array.isArray(value) && value.length && typeof value[0] === "object" && value[0] !== null && "type" in value[0]) {
-    return value.map((activator, index) => sanitizeActivator(activator, index));
-  }
-  if (Array.isArray(value)) {
-    return value
-      .filter((item) => typeof item === "string" && item.trim())
-      .map((item, index) => createDefaultActivator(item.trim(), index));
-  }
-  if (typeof value === "string") {
-    return value === "Unmapped" || !value.trim() ? [] : [createDefaultActivator(value.trim(), 0)];
-  }
-  return [];
+
+
+
+
+
+
+
+
+
+
+function createEmptyPreset() {
+  return { id: "0", name: "Default", title: "Default", kind: "set", parentName: "", bindings: {}, modes: {}, gyro: null };
 }
 
-function createDefaultActivator(binding = "", index = 0) {
-  return {
-    id: `act_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-    type: "regular_press",
-    binding,
-    actions: binding ? [{ output: binding, delayMs: 0 }] : [],
-    axisBinding: null,
-    chord: "",
-    toggle: false,
-    interruptable: true,
-    turbo: false,
-    cycleBinding: false,
-    doubleTapTime: 0.2,
-    longPressTime: 0.35,
-    fireStartDelay: 0,
-    fireEndDelay: 0,
-    repeatRate: 0.15,
-    haptics: "off",
-    notes: ""
-  };
+function getActivePreset() {
+  return state.presets[state.activePresetIndex] ?? state.presets[0];
 }
 
-function sanitizeActivator(value, index = 0) {
-  const base = createDefaultActivator("", index);
-  const knownTypes = new Set(ACTIVATOR_TYPES.map((item) => item.value));
-  const next = {
-    ...base,
-    ...value
-  };
-  next.id = typeof next.id === "string" && next.id ? next.id : base.id;
-  next.type = knownTypes.has(next.type) ? next.type : base.type;
-  next.binding = typeof next.binding === "string" ? next.binding.trim() : "";
-  next.actions = normalizeActivatorActions(next.actions);
-  if (!next.actions.length && next.binding) {
-    next.actions = [{ output: next.binding, delayMs: 0 }];
-  }
-  if (!next.binding && next.actions.length) {
-    next.binding = next.actions[0].output;
-  }
-  next.axisBinding = value.axisBinding ? sanitizeAxisBinding(value.axisBinding) : null;
-  next.chord = typeof next.chord === "string" ? next.chord.trim() : "";
-  next.toggle = Boolean(next.toggle);
-  next.interruptable = Boolean(next.interruptable);
-  next.turbo = Boolean(next.turbo);
-  next.cycleBinding = Boolean(next.cycleBinding);
-  next.doubleTapTime = clampNumber(next.doubleTapTime, 0, 1, base.doubleTapTime);
-  next.longPressTime = clampNumber(next.longPressTime, 0, 1, base.longPressTime);
-  next.fireStartDelay = clampNumber(next.fireStartDelay, 0, 1, base.fireStartDelay);
-  next.fireEndDelay = clampNumber(next.fireEndDelay, 0, 1, base.fireEndDelay);
-  next.repeatRate = clampNumber(next.repeatRate, 0, 1, base.repeatRate);
-  next.haptics = ["off", "low", "medium", "high"].includes(next.haptics) ? next.haptics : "off";
-  next.notes = typeof next.notes === "string" ? next.notes.trim() : "";
-  return next;
+function getActiveBindings() {
+  return getEffectiveBindings(state.presets, getActivePreset());
 }
 
-function sanitizeAxisBinding(value) {
-  const base = {
-    mode: "mouse_move",
-    click: "",
-    move: "",
-    up: "",
-    down: "",
-    left: "",
-    right: "",
-    sensitivity: 1,
-    deadzone: 0.15
-  };
-  if (!value || typeof value !== "object") return base;
-  return {
-    mode: AXIS_CONTROL_MODES.some((entry) => entry.value === value.mode) ? value.mode : base.mode,
-    click: typeof value.click === "string" ? value.click.trim() : "",
-    move: typeof value.move === "string" ? value.move.trim() : "",
-    up: typeof value.up === "string" ? value.up.trim() : "",
-    down: typeof value.down === "string" ? value.down.trim() : "",
-    left: typeof value.left === "string" ? value.left.trim() : "",
-    right: typeof value.right === "string" ? value.right.trim() : "",
-    sensitivity: clampNumber(value.sensitivity, 0.1, 3, base.sensitivity),
-    deadzone: clampNumber(value.deadzone, 0, 1, base.deadzone)
-  };
+function getPresetNames() {
+  return Object.fromEntries(state.presets.map((preset) => [preset.id, preset.title]));
 }
 
-function normalizeActivatorActions(actions) {
-  if (!Array.isArray(actions)) return [];
-  return actions
-    .map((step) => {
-      if (!step || typeof step !== "object") return null;
-      const output = typeof step.output === "string" ? step.output.trim() : "";
-      if (!output) return null;
-      const delayMs = Math.round(clampNumber(step.delayMs, 0, 2000, 0));
-      const dsl = step.dsl && typeof step.dsl === "object" ? sanitizeBindingDsl(step.dsl) : null;
-      return dsl ? { output, delayMs, dsl } : { output, delayMs };
-    })
-    .filter(Boolean);
-}
-
-function sanitizeBindingDsl(value) {
-  const commandRaw = typeof value.commandRaw === "string" && value.commandRaw.trim() ? value.commandRaw.trim() : "";
-  const command = typeof value.command === "string" && value.command.trim() ? value.command.trim().toLowerCase() : commandRaw.toLowerCase();
-  const argsRaw = typeof value.argsRaw === "string" ? value.argsRaw.trim() : "";
-  const label = typeof value.label === "string" ? value.label.trim() : "";
-  const icon = typeof value.icon === "string" ? value.icon.trim() : "";
-  const colors = typeof value.colors === "string" ? value.colors.trim() : "";
-  const extra = Array.isArray(value.extra)
-    ? value.extra.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean)
-    : [];
-  const raw = typeof value.raw === "string" ? value.raw.trim() : "";
-  const argTokens = Array.isArray(value.argTokens)
-    ? value.argTokens.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean)
-    : (argsRaw ? argsRaw.split(/\s+/).filter(Boolean) : []);
-  if (!command) return null;
-  return {
-    command,
-    commandRaw: commandRaw || command,
-    argsRaw,
-    argTokens,
-    label,
-    icon,
-    colors,
-    extra,
-    raw
-  };
-}
-
-function clampNumber(value, min, max, fallback) {
-  if (!Number.isFinite(Number(value))) return fallback;
-  return Math.min(Math.max(Number(value), min), max);
-}
-
+/** Read-only view of a control's activators, including ones a layer inherits. */
 function getControlActivators(controlId) {
-  if (state.bindingEditorOpen && state.selectedControlId === controlId) {
-    return getControlActivatorsForEditing(controlId);
-  }
-  const current = normalizeBindingValue(state.bindings[controlId]);
-  state.bindings[controlId] = current;
-  return current;
+  return getActiveBindings()[controlId] ?? [];
 }
 
-function getControlActivatorsForEditing(controlId) {
-  let current = state.bindings[controlId];
-  if (!Array.isArray(current)) {
-    current = normalizeBindingValue(current);
-    state.bindings[controlId] = current;
+/** Activators to mutate; a layer gets its own copy of an inherited control. */
+function getEditableActivators(controlId) {
+  const preset = getActivePreset();
+  if (!Array.isArray(preset.bindings[controlId])) {
+    const inherited = getActiveBindings()[controlId] ?? [];
+    preset.bindings[controlId] = inherited.map((activator) => structuredClone(activator));
   }
-  return current;
+  return preset.bindings[controlId];
+}
+
+function getControlMode(controlId) {
+  const preset = getActivePreset();
+  if (preset.modes?.[controlId]) return preset.modes[controlId];
+  if (preset.kind !== "layer") return undefined;
+  return state.presets.find((candidate) => candidate.name === preset.parentName)?.modes?.[controlId];
+}
+
+/** Starts a request on a channel and returns a check for whether it is still the latest. */
+function beginRequest(channel) {
+  const id = (requestSequence.get(channel) ?? 0) + 1;
+  requestSequence.set(channel, id);
+  return () => requestSequence.get(channel) === id;
 }
 
 function getSelectedControl() {
@@ -714,6 +1051,10 @@ function getSelectedControl() {
 function isAxisControl(controlId) {
   const control = getControlById(controlId);
   return control?.kind === "stick" || control?.kind === "pad";
+}
+
+function isAxisEditing(controlId, activator) {
+  return isAxisControl(controlId) && !activator?.input;
 }
 
 function getAxisBindingForEditing(activator) {
@@ -726,7 +1067,7 @@ function seedAxisBindingFromLegacyActions(active) {
   const axisBinding = getAxisBindingForEditing(active);
   if (!axisBinding) return null;
   if (activatorHasConfiguredAxisBinding(active)) return axisBinding;
-  const legacy = active.actions.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? active.binding;
+  const legacy = active.actions.find((step) => step.output)?.output ?? "";
   if (!legacy) return axisBinding;
   if (/mouse move/i.test(legacy)) axisBinding.move = legacy;
   else if (/^(left mouse|right mouse|middle mouse)$/i.test(legacy)) axisBinding.click = legacy;
@@ -750,30 +1091,20 @@ function setAxisSlotValue(axisBinding, slot, value) {
 }
 
 function formatAxisBindingSummary(axisBinding) {
-  if (!axisBinding) return "Unmapped";
-  const parts = [AXIS_CONTROL_MODES.find((entry) => entry.value === axisBinding.mode)?.label ?? "Mouse Move"];
-  const click = getAxisSlotValue(axisBinding, "click");
-  const move = getAxisSlotValue(axisBinding, "move");
-  const directions = ["up", "down", "left", "right"]
-    .map((slot) => getAxisSlotValue(axisBinding, slot))
-    .filter(Boolean);
-  if (!click && !move && !directions.length) return "Unmapped";
-  if (click) parts.push(`Click: ${click}`);
-  if (move) parts.push(`Move: ${move}`);
-  if (directions.length) parts.push(`Dirs: ${directions.join("/")}`);
-  parts.push(`Deadzone ${axisBinding.deadzone.toFixed(2)}`);
-  return parts.join(" • ");
+  if (!axisBindingHasSlots(axisBinding)) return "Unmapped";
+  const mode = AXIS_CONTROL_MODES.find((entry) => entry.value === axisBinding.mode)?.label ?? "Mouse Move";
+  const slots = ["click", "move", "up", "down", "left", "right"]
+    .filter((slot) => getAxisSlotValue(axisBinding, slot))
+    .map((slot) => `${slot[0].toUpperCase()}${slot.slice(1)}: ${getAxisSlotValue(axisBinding, slot)}`);
+  return [mode, ...slots].join(" • ");
 }
 
-function summarizeAxisBindingForActivator(axisBinding) {
-  return formatAxisBindingSummary(axisBinding);
-}
 
 function renderAxisBindingSummary(axisBinding = null) {
   if (!el.bindingEditorAxisSummary) return;
   el.bindingEditorAxisSummary.innerHTML = "";
   const binding = axisBinding ?? (state.bindingEditorOpen && state.selectedControlId
-    ? getAxisBindingForEditing(getControlActivatorsForEditing(state.selectedControlId)[state.selectedActivatorIndex])
+    ? getAxisBindingForEditing(getEditableActivators(state.selectedControlId)[state.selectedActivatorIndex])
     : null);
   if (!binding) {
     const empty = document.createElement("span");
@@ -823,37 +1154,9 @@ function syncAxisPresetButtons(axisBinding = null) {
 }
 
 function getBindingSummaryEntries(controlId) {
-  const control = getControlById(controlId);
-  if (control?.kind === "stick" || control?.kind === "pad") {
-    const axisEntries = getControlActivators(controlId)
-      .filter((activator) => activatorHasConfiguredAxisBinding(activator))
-      .map((activator) => formatAxisBindingSummary(activator.axisBinding));
-    if (axisEntries.length) return axisEntries;
-  }
-  return getControlActivators(controlId)
-    .filter((activator) => activator.actions.length || activator.binding || activator.chord)
-    .map((activator) => formatActivatorSummary(activator));
+  return describeControl(getControlActivators(controlId), getControlMode(controlId), { presetNames: getPresetNames() });
 }
 
-function formatActivatorSummary(activator) {
-  const typeLabel = ACTIVATOR_TYPES.find((item) => item.value === activator.type)?.label ?? "Full Press";
-  const parts = [typeLabel];
-  if (activator.actions.length) {
-    const actionSummary = activator.actions
-      .map((step) => {
-        const output = step?.output || "Unmapped";
-        return step?.delayMs > 0 ? `${output} (+${step.delayMs}ms)` : output;
-      })
-      .join(" ⟶ ");
-    parts.push(actionSummary);
-  } else {
-    parts.push(activator.binding || "Unmapped");
-  }
-  if (activator.chord) parts.push(`Chord: ${activator.chord}`);
-  if (activator.turbo) parts.push(`Turbo ${(activator.repeatRate * 100).toFixed(0)}%`);
-  if (activator.toggle) parts.push("Toggle");
-  return parts.join(" • ");
-}
 
 function renderBindings() {
   el.bindingsTable.innerHTML = "";
@@ -883,7 +1186,6 @@ function renderBindings() {
     el.bindingsTable.appendChild(fragment);
   });
   renderValidationSummary();
-  scheduleScrollSelectedBindingRow();
   schedulePersistCurrentLayoutState();
 }
 
@@ -899,11 +1201,16 @@ function updateSelectionInfo() {
 }
 
 function updateCommunitySummary() {
-  if (!state.loadedLayoutMeta) {
-    el.currentCommunitySummary.textContent = "No layout loaded yet.";
+  const meta = state.loadedLayoutMeta;
+  if (!meta) {
+    el.currentCommunitySummary.textContent = state.layoutTitle || "No layout loaded yet.";
+    el.copyLayoutLinkBtn.hidden = true;
     return;
   }
-  el.currentCommunitySummary.textContent = `${state.loadedLayoutMeta.title} • ${state.loadedLayoutMeta.controller_type_nice || "Community layout"}`;
+  el.currentCommunitySummary.textContent = [meta.title || state.layoutTitle, meta.controller_type_nice || (meta.file_id ? "Community layout" : "")]
+    .filter(Boolean)
+    .join(" • ");
+  el.copyLayoutLinkBtn.hidden = !meta.file_id;
 }
 
 function selectControl(controlId) {
@@ -924,18 +1231,19 @@ function scheduleScrollSelectedBindingRow() {
   scheduleScrollSelectedBindingRow.rafId = requestAnimationFrame(() => {
     scheduleScrollSelectedBindingRow.rafId = 0;
     const row = el.bindingsTable.querySelector(`tr[data-control-id="${CSS.escape(state.selectedControlId)}"]`);
-    row?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    row?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
   });
 }
 
 function showCommunityDialog() {
   state.communityDialogOpen = true;
-  el.communityDialogBackdrop.classList.remove("hidden");
+  openDialog(el.communityDialogBackdrop, el.gameSearchInput);
 }
 
 function hideCommunityDialog() {
+  if (!state.communityDialogOpen) return;
   state.communityDialogOpen = false;
-  el.communityDialogBackdrop.classList.add("hidden");
+  closeDialog(el.communityDialogBackdrop);
 }
 
 function initBindingEditor() {
@@ -1043,13 +1351,13 @@ function applyMouseToken(token) {
     el.bindingEditorStepInput.focus();
     return;
   }
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) {
     el.bindingEditorStepInput.focus();
     return;
   }
-  if (isAxisControl(state.selectedControlId)) {
+  if (isAxisEditing(state.selectedControlId, active)) {
     syncCurrentInputFromEditor();
     el.bindingEditorStepInput.focus();
     return;
@@ -1064,7 +1372,6 @@ function applyMouseToken(token) {
   }
   active.actions[state.draftStepIndex].output = composed;
   active.actions[state.draftStepIndex].dsl = null;
-  active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
   updateSelectionInfo();
@@ -1175,10 +1482,11 @@ function showBindingEditor() {
   syncModifierButtons();
   syncAdvancedVisibility();
   syncInputModeTabs();
+  dialogOpeners.set(el.bindingEditorBackdrop, document.activeElement);
   el.bindingEditorBackdrop.classList.remove("hidden");
-  const activators = getControlActivators(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   if (!activators.length) {
-    activators.push(createDefaultActivator("", 0));
+    activators.push(createDefaultActivator());
   }
   state.selectedActivatorIndex = clamp(Math.floor(state.selectedActivatorIndex), 0, activators.length - 1);
   renderBindingEditor();
@@ -1186,16 +1494,42 @@ function showBindingEditor() {
 }
 
 function hideBindingEditor() {
+  if (!state.bindingEditorOpen) return;
   state.bindingEditorOpen = false;
   el.bindingEditorBackdrop.classList.add("hidden");
+  if (state.selectedControlId) {
+    const activators = getEditableActivators(state.selectedControlId);
+    for (const activator of activators) {
+      activator.actions = normalizeActivatorActions(activator.actions);
+    }
+    const kept = activators.filter((activator) => !isPristineActivator(activator));
+    activators.splice(0, activators.length, ...kept);
+  }
+  restoreFocus(el.bindingEditorBackdrop);
+  refreshBindingViews();
+}
+
+function isPristineActivator(activator) {
+  const pristine = createDefaultActivator();
+  return !activatorHasAction(activator)
+    && !axisBindingHasSlots(activator.axisBinding)
+    && ["type", "chord", "toggle", "interruptable", "turbo", "cycleBinding", "doubleTapTime", "longPressTime",
+      "fireStartDelay", "fireEndDelay", "repeatRate", "haptics", "notes"].every((key) => activator[key] === pristine[key]);
+}
+
+function refreshBindingViews() {
+  renderBindings();
+  updateSelectionInfo();
+  renderBindingOverlays();
+  renderLayoutOverview();
 }
 
 function renderBindingEditor() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
   const control = getSelectedControl();
-  const activators = getControlActivators(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   if (!activators.length) {
-    activators.push(createDefaultActivator("", 0));
+    activators.push(createDefaultActivator());
   }
   state.selectedActivatorIndex = clamp(Math.floor(state.selectedActivatorIndex), 0, activators.length - 1);
   el.bindingEditorActivatorList.innerHTML = "";
@@ -1203,7 +1537,7 @@ function renderBindingEditor() {
     const item = document.createElement("li");
     item.className = `editor-list-item${index === state.selectedActivatorIndex ? " active" : ""}`;
     const title = ACTIVATOR_TYPES.find((entry) => entry.value === activator.type)?.label ?? "Full Press";
-    const binding = activator.actions.length ? activator.actions.map((step) => step?.output || "Unmapped").join(" ⟶ ") : (activator.binding || "Unmapped");
+    const binding = activator.actions.some((step) => step.output) ? describeActivator(activator, { presetNames: getPresetNames() }) : "Unmapped";
     item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(binding)}</span>`;
     item.addEventListener("click", () => {
       state.selectedActivatorIndex = index;
@@ -1213,7 +1547,7 @@ function renderBindingEditor() {
   });
 
   const active = activators[state.selectedActivatorIndex];
-  const axisControl = control?.kind === "stick" || control?.kind === "pad";
+  const axisControl = isAxisEditing(state.selectedControlId, active);
   const axisBinding = axisControl ? seedAxisBindingFromLegacyActions(active) : null;
   let draftIndex = null;
   for (let index = active.actions.length - 1; index >= 0; index -= 1) {
@@ -1279,9 +1613,9 @@ function renderActionStepList(actions) {
         <span>ms</span>
       </label>
       <div class="step-actions">
-        <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button type="button" data-action="down" data-index="${index}" ${index === actions.length - 1 ? "disabled" : ""}>↓</button>
-        <button type="button" data-action="remove" data-index="${index}">✕</button>
+        <button type="button" data-action="up" data-index="${index}" aria-label="Move step up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" data-action="down" data-index="${index}" aria-label="Move step down" ${index === actions.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" data-action="remove" data-index="${index}" aria-label="Remove step">✕</button>
       </div>
     `;
     el.bindingEditorStepList.appendChild(item);
@@ -1308,7 +1642,7 @@ function renderActionStepList(actions) {
 
 function addActionStepToSelectedActivator() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   if (state.draftStepIndex != null && state.draftStepIndex >= 0 && state.draftStepIndex < active.actions.length && !active.actions[state.draftStepIndex]?.output) {
@@ -1317,7 +1651,6 @@ function addActionStepToSelectedActivator() {
   }
   active.actions.push({ output: "", delayMs: 0, dsl: null });
   state.draftStepIndex = active.actions.length - 1;
-  active.binding = active.actions[0]?.output ?? "";
   resetDraftStepInput();
   renderActionStepList(active.actions);
   requestAnimationFrame(() => el.bindingEditorStepInput.focus());
@@ -1325,7 +1658,7 @@ function addActionStepToSelectedActivator() {
 
 function mutateActionStep(action, index) {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active || index < 0 || index >= active.actions.length) return;
   if (action === "remove") {
@@ -1345,7 +1678,6 @@ function mutateActionStep(action, index) {
     if (state.draftStepIndex === index) state.draftStepIndex = index + 1;
     else if (state.draftStepIndex === index + 1) state.draftStepIndex = index;
   }
-  active.binding = active.actions[0]?.output ?? active.binding;
   renderBindingEditor();
   renderBindings();
   updateSelectionInfo();
@@ -1354,7 +1686,7 @@ function mutateActionStep(action, index) {
 
 function updateActionStepDelay(index, delayMs) {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active || index < 0 || index >= active.actions.length) return;
   active.actions[index].delayMs = delayMs;
@@ -1403,7 +1735,7 @@ function getStepModifierButtonsMarkup(index, selectedModifiers) {
 function toggleModifierOnActionStep(index, modifier) {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
   if (!MODIFIER_TOKENS.includes(modifier)) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active || index < 0 || index >= active.actions.length) return;
   const step = active.actions[index];
@@ -1416,7 +1748,6 @@ function toggleModifierOnActionStep(index, modifier) {
   else modifiers.push(modifier);
   step.output = composeOutputWithModifiers(modifiers, split.payload);
   step.dsl = null;
-  active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
   updateSelectionInfo();
@@ -1481,14 +1812,13 @@ function syncCurrentInputFromEditor() {
   const raw = el.bindingEditorStepInput.value.trim();
   const composed = raw ? composeCurrentInput(raw) : "";
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
-  if (isAxisControl(state.selectedControlId)) {
+  if (isAxisEditing(state.selectedControlId, active)) {
     const axisBinding = getAxisBindingForEditing(active);
     if (!axisBinding) return;
     setAxisSlotValue(axisBinding, state.bindingEditorAxisSlot, composed);
-    active.binding = summarizeAxisBindingForActivator(axisBinding);
     renderAxisBindingSummary();
     renderBindings();
     updateSelectionInfo();
@@ -1499,7 +1829,6 @@ function syncCurrentInputFromEditor() {
     if (composed) {
       active.actions = [{ output: composed, delayMs: 0 }];
       state.draftStepIndex = 0;
-      active.binding = composed;
       renderActionStepList(active.actions);
       renderBindings();
       updateSelectionInfo();
@@ -1512,7 +1841,6 @@ function syncCurrentInputFromEditor() {
   }
   active.actions[state.draftStepIndex].output = composed;
   active.actions[state.draftStepIndex].dsl = null;
-  active.binding = active.actions[0]?.output ?? "";
   renderActionStepList(active.actions);
   renderBindings();
   updateSelectionInfo();
@@ -1532,7 +1860,7 @@ function resetDraftStepInput() {
 
 function syncAxisBindingEditor() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   const axisBinding = getAxisBindingForEditing(active);
@@ -1548,7 +1876,7 @@ function syncAxisBindingEditor() {
 
 function updateAxisBindingFromEditor() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   const axisBinding = getAxisBindingForEditing(active);
@@ -1556,7 +1884,6 @@ function updateAxisBindingFromEditor() {
   axisBinding.mode = el.bindingEditorAxisMode.value;
   axisBinding.sensitivity = clampNumber(el.bindingEditorAxisSensitivity.value, 0.1, 3, axisBinding.sensitivity);
   axisBinding.deadzone = clampNumber(el.bindingEditorAxisDeadzone.value, 0, 1, axisBinding.deadzone);
-  active.binding = summarizeAxisBindingForActivator(axisBinding);
   syncAxisPresetButtons(axisBinding);
   renderAxisBindingSummary(axisBinding);
   renderBindings();
@@ -1566,7 +1893,7 @@ function updateAxisBindingFromEditor() {
 
 function applyAxisPreset(preset) {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   const axisBinding = getAxisBindingForEditing(active);
@@ -1588,7 +1915,6 @@ function applyAxisPreset(preset) {
     axisBinding.left = "Left";
     axisBinding.right = "Right";
   }
-  active.binding = summarizeAxisBindingForActivator(axisBinding);
   syncAxisBindingEditor();
   syncAxisPresetButtons(axisBinding);
   renderAxisBindingSummary(axisBinding);
@@ -1599,8 +1925,8 @@ function applyAxisPreset(preset) {
 
 function addActivatorForSelectedControl() {
   if (!state.selectedControlId) return;
-  const activators = getControlActivators(state.selectedControlId);
-  const next = createDefaultActivator("", activators.length);
+  const activators = getEditableActivators(state.selectedControlId);
+  const next = createDefaultActivator();
   activators.push(next);
   state.selectedActivatorIndex = activators.length - 1;
   renderBindingEditor();
@@ -1611,10 +1937,10 @@ function addActivatorForSelectedControl() {
 
 function removeSelectedActivator() {
   if (!state.selectedControlId) return;
-  const activators = getControlActivators(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   if (!activators.length) return;
   activators.splice(state.selectedActivatorIndex, 1);
-  if (!activators.length) activators.push(createDefaultActivator("", 0));
+  if (!activators.length) activators.push(createDefaultActivator());
   state.selectedActivatorIndex = clamp(state.selectedActivatorIndex, 0, activators.length - 1);
   renderBindingEditor();
   renderBindings();
@@ -1624,16 +1950,15 @@ function removeSelectedActivator() {
 
 function updateSelectedActivatorFromEditor() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
-  if (isAxisControl(state.selectedControlId)) {
+  if (isAxisEditing(state.selectedControlId, active)) {
     const axisBinding = getAxisBindingForEditing(active);
     if (!axisBinding) return;
     axisBinding.mode = el.bindingEditorAxisMode.value;
     axisBinding.sensitivity = clampNumber(el.bindingEditorAxisSensitivity.value, 0.1, 3, axisBinding.sensitivity);
     axisBinding.deadzone = clampNumber(el.bindingEditorAxisDeadzone.value, 0, 1, axisBinding.deadzone);
-    active.binding = summarizeAxisBindingForActivator(axisBinding);
     syncAxisPresetButtons(axisBinding);
     renderAxisBindingSummary(axisBinding);
     renderBindings();
@@ -1647,15 +1972,14 @@ function updateSelectedActivatorFromEditor() {
   active.interruptable = el.bindingEditorInterruptable.checked;
   active.turbo = el.bindingEditorTurbo.checked;
   active.cycleBinding = el.bindingEditorCycle.checked;
-  active.doubleTapTime = clampNumber(el.bindingEditorDoubleTap.value, 0, 1, active.doubleTapTime);
-  active.longPressTime = clampNumber(el.bindingEditorLongPress.value, 0, 1, active.longPressTime);
-  active.fireStartDelay = clampNumber(el.bindingEditorStartDelay.value, 0, 1, active.fireStartDelay);
-  active.fireEndDelay = clampNumber(el.bindingEditorEndDelay.value, 0, 1, active.fireEndDelay);
-  active.repeatRate = clampNumber(el.bindingEditorRepeatRate.value, 0, 1, active.repeatRate);
+  active.doubleTapTime = Math.round(clampNumber(el.bindingEditorDoubleTap.value, 0, 10000, active.doubleTapTime));
+  active.longPressTime = Math.round(clampNumber(el.bindingEditorLongPress.value, 0, 10000, active.longPressTime));
+  active.fireStartDelay = Math.round(clampNumber(el.bindingEditorStartDelay.value, 0, 10000, active.fireStartDelay));
+  active.fireEndDelay = Math.round(clampNumber(el.bindingEditorEndDelay.value, 0, 10000, active.fireEndDelay));
+  active.repeatRate = Math.round(clampNumber(el.bindingEditorRepeatRate.value, 0, 10000, active.repeatRate));
   active.haptics = el.bindingEditorHaptics.value;
   active.notes = el.bindingEditorNotes.value.trim();
   active.actions = normalizeActivatorActions(active.actions);
-  active.binding = active.actions[0]?.output ?? active.binding;
   renderBindingEditor();
   renderBindings();
   updateSelectionInfo();
@@ -1720,7 +2044,7 @@ function renderChordConditionPicker() {
 
 function persistChordSelectionFromPicker() {
   if (!state.bindingEditorOpen || !state.selectedControlId) return;
-  const activators = getControlActivatorsForEditing(state.selectedControlId);
+  const activators = getEditableActivators(state.selectedControlId);
   const active = activators[state.selectedActivatorIndex];
   if (!active) return;
   active.chord = getChordSelectionValue();
@@ -1741,16 +2065,18 @@ async function searchGames() {
     return;
   }
 
+  const isLatest = beginRequest("game-search");
   setLayoutStatus(`Searching Steam for "${query}"...`);
   try {
-    const response = await fetch(`/api/store-search?q=${encodeURIComponent(query)}`);
+    const response = await fetch(apiUrl("store-search", { q: query }));
     if (!response.ok) throw new Error("Game search failed");
-    const payload = await response.json();
-    state.gameResults = Array.isArray(payload.items) ? payload.items : [];
+    const items = mapStoreSearchItems(await response.json());
+    if (!isLatest()) return;
+    state.gameResults = items;
     renderGameResults();
     setLayoutStatus(state.gameResults.length ? `Found ${state.gameResults.length} game result(s).` : "No games found.");
   } catch {
-    setLayoutStatus("Game search failed. Start the app with the local proxy server.", true);
+    if (isLatest()) setLayoutStatus("Game search failed. The layout proxy is unreachable.", true);
   }
 }
 
@@ -1775,36 +2101,40 @@ function renderGameResults() {
 
 async function loadCommunityLayouts(options = {}) {
   const { ignoreLayoutSearch = false } = options;
-  if (!state.selectedGame?.id) {
+  const game = state.selectedGame;
+  if (!game?.id) {
     setLayoutStatus("Select a game first.");
     return;
   }
 
-  const params = new URLSearchParams({
-    appid: String(state.selectedGame.id),
-    sort: el.layoutSortSelect.value,
-    controller_type: "controller_neptune"
-  });
+  const params = {
+    appid: String(game.id),
+    sort: el.layoutSortSelect.value
+  };
   const searchText = ignoreLayoutSearch ? "" : el.layoutSearchInput.value.trim();
-  if (searchText && searchText !== "*") {
-    params.set("searchtext", searchText);
-  }
+  if (searchText && searchText !== "*") params.searchtext = searchText;
 
-  setLayoutStatus(`Loading community layouts for ${state.selectedGame.name}...`);
+  const isLatest = beginRequest("community-layouts");
+  setLayoutStatus(`Loading community layouts for ${game.name}...`);
   try {
-    const response = await fetch(`/api/community-layouts?${params.toString()}`);
-    if (!response.ok) throw new Error("Layout search failed");
-    const payload = await response.json();
-    state.communityLayouts = Array.isArray(payload.layouts) ? payload.layouts : [];
+    const layouts = await fetchCommunityLayoutList(params);
+    if (!isLatest()) return;
+    state.communityLayouts = layouts.map((layout) => ({ ...layout, app_id: game.id }));
     renderCommunityLayouts();
     setLayoutStatus(
       state.communityLayouts.length
-        ? `Loaded ${state.communityLayouts.length} layout(s) for ${state.selectedGame.name}.`
-        : `No layouts found for ${state.selectedGame.name}.`
+        ? `Loaded ${state.communityLayouts.length} layout(s) for ${game.name}.`
+        : `No layouts found for ${game.name}.`
     );
   } catch {
-    setLayoutStatus("Community layout loading failed. Start the app with the local proxy server.", true);
+    if (isLatest()) setLayoutStatus("Community layout loading failed. The layout proxy is unreachable.", true);
   }
+}
+
+async function fetchCommunityLayoutList(params) {
+  const response = await fetch(apiUrl("layouts", params));
+  if (!response.ok) throw new Error("Layout search failed");
+  return mapQueryFilesLayouts(await response.json());
 }
 
 function renderCommunityLayouts() {
@@ -1847,6 +2177,7 @@ function renderLayoutDetail() {
     el.layoutDetailDescription.textContent = "";
     el.layoutDetailTags.innerHTML = "";
     el.dialogLoadLayoutBtn.disabled = true;
+    el.dialogCompareLayoutBtn.disabled = true;
     return;
   }
   el.layoutDetailTitle.textContent = layout.title || `Layout ${layout.file_id}`;
@@ -1862,10 +2193,11 @@ function renderLayoutDetail() {
   el.layoutDetailTags.innerHTML = "";
   (layout.tags ?? []).slice(0, 6).forEach((tag) => {
     const span = document.createElement("span");
-    span.textContent = tag.replaceAll("_", " ");
+    span.textContent = String(tag).replaceAll("_", " ");
     el.layoutDetailTags.appendChild(span);
   });
   el.dialogLoadLayoutBtn.disabled = !layout.file_url;
+  el.dialogCompareLayoutBtn.disabled = !layout.file_url;
 }
 
 async function loadCommunityLayout(layoutMeta) {
@@ -1875,32 +2207,44 @@ async function loadCommunityLayout(layoutMeta) {
     return;
   }
 
+  const isLatest = beginRequest("layout-load");
   setLayoutStatus(`Loading ${target.title}...`);
   try {
-    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
-    if (!response.ok) throw new Error("Layout fetch failed");
-    const payload = await response.json();
-    const parsed = parseVdf(payload.vdf);
-    const bindings = extractBindingsFromLayout(parsed);
-    const mappedControlCount = Object.values(bindings).filter((entries) => Array.isArray(entries) && entries.length > 0).length;
-    const mappingSummary = mappedControlCount
-      ? `${mappedControlCount}/${controls.length} controls mapped.`
-      : "No recognizable control mappings found in this file.";
-
-    state.loadedLayoutMeta = target;
-    state.bindings = Object.fromEntries(controls.map((control) => [control.id, bindings[control.id] ?? []]));
-    renderCommunityLayouts();
-    renderBindings();
-    updateSelectionInfo();
-    renderBindingOverlays();
+    const vdf = await fetchCommunityLayoutVdf(target);
+    if (!isLatest()) return;
+    applyVdfLayout(vdf, target);
     state.selectedLayoutDetail = target;
-    renderLayoutDetail();
-    setLayoutStatus(`Loaded ${target.title}. ${summarizeLoadedLayout(target)}${mappingSummary ? ` • ${mappingSummary}` : ""}`, mappedControlCount === 0);
-    updateCommunitySummary();
+    renderCommunityLayouts();
     hideCommunityDialog();
   } catch {
-    setLayoutStatus(`Failed to parse ${target?.title ?? "selected layout"}.`, true);
+    if (isLatest()) setLayoutStatus(`Failed to parse ${target?.title ?? "selected layout"}.`, true);
   }
+}
+
+/** Replaces the current layout with a Steam Input VDF. */
+function applyVdfLayout(vdfText, meta = null) {
+  const doc = readControllerConfig(parseVdf(vdfText), controls.map((control) => control.id));
+  if (!doc.presets.length) throw new Error("No action sets in layout");
+  state.layoutGeneration += 1;
+  state.presets = doc.presets;
+  state.activePresetIndex = 0;
+  state.layoutTitle = meta?.title || doc.title;
+  state.layoutDescription = meta?.description || doc.description;
+  state.loadedLayoutMeta = meta ?? { title: doc.title || "VDF layout", description: doc.description };
+  replaceLayoutUrlParam(meta?.file_id ?? null);
+  renderPresetSelect();
+  refreshBindingViews();
+  updateCommunitySummary();
+
+  const mappedControlCount = controls.filter((control) => getControlActivators(control.id).some(activatorHasAction)).length;
+  const sets = doc.presets.filter((preset) => preset.kind === "set").length;
+  const layers = doc.presets.length - sets;
+  const structure = `${sets} action set${sets === 1 ? "" : "s"}${layers ? `, ${layers} layer${layers === 1 ? "" : "s"}` : ""}`;
+  const summary = meta ? summarizeLoadedLayout(meta) : "";
+  setLayoutStatus(
+    `Loaded ${state.loadedLayoutMeta.title}. ${structure} • ${mappedControlCount}/${controls.length} controls mapped${summary ? ` • ${summary}` : ""}`,
+    mappedControlCount === 0
+  );
 }
 
 async function downloadCommunityLayout(layoutMeta) {
@@ -1912,24 +2256,26 @@ async function downloadCommunityLayout(layoutMeta) {
 
   setLayoutStatus(`Downloading ${target.title || `Layout ${target.file_id}`}...`);
   try {
-    const response = await fetch(`/api/layout-file?url=${encodeURIComponent(target.file_url)}`);
-    if (!response.ok) throw new Error("Layout fetch failed");
-    const payload = await response.json();
+    const vdf = await fetchCommunityLayoutVdf(target);
     const filename = getCommunityLayoutFileName(target);
-    const blob = new Blob([payload.vdf ?? ""], { type: "text/plain;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    downloadBlob(new Blob([vdf], { type: "text/plain;charset=utf-8" }), filename);
     setLayoutStatus(`Downloaded ${filename}.`, false);
   } catch {
     setLayoutStatus(`Failed to download ${target?.title ?? "selected layout"}.`, true);
   }
 }
 
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  // Revoking synchronously can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+}
+
 function getCommunityLayoutFileName(layoutMeta) {
-  const appSegment = state.selectedGame?.id ? `app${state.selectedGame.id}` : "app";
+  const appSegment = layoutMeta?.app_id ? `app${layoutMeta.app_id}` : "app";
   const fallback = layoutMeta?.file_id != null ? `layout-${layoutMeta.file_id}` : "layout";
   const title = layoutMeta?.title || layoutMeta?.file_name || fallback;
   const titleSegment = sanitizeFilenameSegment(title) || fallback;
@@ -1953,8 +2299,10 @@ function summarizeLoadedLayout(layoutMeta) {
 }
 
 function setLayoutStatus(message, isError = false) {
-  el.layoutStatus.textContent = message;
-  el.layoutStatus.classList.toggle("error", isError);
+  for (const target of [el.layoutStatus, el.appStatus]) {
+    target.textContent = message;
+    target.classList.toggle("error", isError);
+  }
 }
 
 function renderValidationSummary() {
@@ -2063,9 +2411,7 @@ function controlHasConfiguredBinding(controlId) {
 }
 
 function activatorHasConfiguredAction(activator) {
-  if (!activator || typeof activator !== "object") return false;
-  if (activator.actions?.some((step) => typeof step?.output === "string" && step.output.trim())) return true;
-  return Boolean(typeof activator.binding === "string" && activator.binding.trim());
+  return activatorHasAction(activator);
 }
 
 function activatorHasConfiguredAxisBinding(activator) {
@@ -2108,42 +2454,34 @@ function findDuplicateCriticalBindings() {
 }
 
 function getPrimaryBindingSignature(controlId) {
-  const control = getControlById(controlId);
-  const activators = getControlActivators(controlId);
-  for (const activator of activators) {
-    const raw = (control?.kind === "stick" || control?.kind === "pad")
-      ? (activatorHasConfiguredAxisBinding(activator)
-        ? summarizeAxisBindingForActivator(activator.axisBinding)
-        : activator.actions?.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? activator.binding)
-      : activator.actions?.find((step) => typeof step?.output === "string" && step.output.trim())?.output ?? activator.binding;
-    if (!raw || typeof raw !== "string" || !raw.trim()) continue;
-    const label = raw.trim();
-    return {
-      key: label.toLowerCase(),
-      label
-    };
+  for (const activator of getControlActivators(controlId)) {
+    const raw = activatorHasConfiguredAxisBinding(activator)
+      ? formatAxisBindingSummary(activator.axisBinding)
+      : activator.actions.find((step) => step.output)?.output;
+    if (!raw) continue;
+    return { key: raw.toLowerCase(), label: raw };
   }
   return null;
 }
 
 function applyDebugBindings() {
+  const preset = getActivePreset();
   controls.forEach((control, index) => {
     const key = DEBUG_KEY_SEQUENCE[index] ?? `F${13 + (index - DEBUG_KEY_SEQUENCE.length)}`;
-    state.bindings[control.id] = [createDefaultActivator(`Keyboard: ${key}`, index)];
+    preset.bindings[control.id] = [createDefaultActivator(key)];
   });
-  renderBindings();
-  updateSelectionInfo();
-  renderBindingOverlays();
+  refreshBindingViews();
   setLayoutStatus("Debug bindings applied to all controls.", false);
 }
 
 function buildLayoutPayload() {
   return {
-    version: 1,
-    name: "Steam Deck Layout Studio export",
+    version: 2,
+    name: state.layoutTitle || DEFAULT_EXPORT_NAME,
+    description: state.layoutDescription,
     savedAt: new Date().toISOString(),
-    bindings: Object.fromEntries(controls.map((control) => [control.id, getControlActivators(control.id)])),
-    vdfBindings: buildVdfBindingsPayload(),
+    presets: state.presets,
+    activePresetIndex: state.activePresetIndex,
     loadedLayoutMeta: state.loadedLayoutMeta,
     controlPositions: Object.fromEntries(controls.map((control) => [control.id, control.pos])),
     controlRotations: Object.fromEntries(controls.map((control) => [control.id, control.rotation])),
@@ -2172,8 +2510,7 @@ function persistCurrentLayoutState() {
       payload: buildLayoutPayload(),
       ui: {
         selectedControlId: state.selectedControlId,
-        selectedActivatorIndex: state.selectedActivatorIndex,
-        themeMode: state.themeMode
+        selectedActivatorIndex: state.selectedActivatorIndex
       }
     };
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
@@ -2190,16 +2527,12 @@ async function saveLayoutToStorage() {
   const savedMessageSuffix = validation.warnings.length
     ? ` ${validation.warnings.length} validation warning${validation.warnings.length === 1 ? "" : "s"} remain.`
     : " Export readiness looks good.";
+  const suggestedName = `${sanitizeFilenameSegment(state.layoutTitle) || "steamdeck-layout"}.json`;
   if ("showSaveFilePicker" in window) {
     try {
       const handle = await window.showSaveFilePicker({
-        suggestedName: "steamdeck-layout.json",
-        types: [
-          {
-            description: "JSON Files",
-            accept: { "application/json": [".json"] }
-          }
-        ]
+        suggestedName,
+        types: [{ description: "JSON Files", accept: { "application/json": [".json"] } }]
       });
       const writable = await handle.createWritable();
       await writable.write(text);
@@ -2209,246 +2542,110 @@ async function saveLayoutToStorage() {
       if (error.name !== "AbortError") setLayoutStatus("Saving layout failed.", true);
     }
   } else {
-    const blob = new Blob([text], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "steamdeck-layout.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
+    downloadBlob(new Blob([text], { type: "application/json" }), suggestedName);
     setLayoutStatus(`Layout downloaded locally.${savedMessageSuffix}`, false);
   }
 }
 
-function buildVdfExportText() {
-  const layout = buildVdfLayoutObject();
-  return serializeVdfTree(layout);
-}
 
-function buildVdfLayoutObject() {
-  return {
-    controller_mappings: {
-      version: "1",
-      preset: {
-        group_source_bindings: Object.fromEntries(
-          controls
-            .map((control) => {
-              const descriptor = getVdfSourceDescriptorForControl(control);
-              return descriptor ? [control.id, `${descriptor.source} active`] : null;
-            })
-            .filter(Boolean)
-        )
-      },
-      group: controls.map((control) => buildVdfGroupForControl(control))
-    }
-  };
-}
 
-function buildVdfGroupForControl(control) {
-  const descriptor = getVdfSourceDescriptorForControl(control);
-  const activators = getControlActivators(control.id);
-  if (!descriptor) {
-    return {
-      id: control.id,
-      inputs: {}
-    };
-  }
 
-  const inputName = descriptor.inputName;
-  const inputNode = buildVdfInputNodeSet(activators);
-  const inputs = inputName ? { [inputName]: inputNode } : {};
 
-  const group = {
-    id: control.id,
-    source: descriptor.source,
-    inputs
-  };
-  const firstAxisBinding = activators.find((activator) => activator.axisBinding)?.axisBinding;
-  if (firstAxisBinding) group.axisBinding = { ...firstAxisBinding };
-  return group;
-}
 
-function buildVdfInputNodeSet(activators) {
-  const node = { activators: {} };
-  activators.forEach((activator, index) => {
-    const bindingStrings = activator.actions
-      .map((step) => {
-        const dsl = step.dsl && typeof step.dsl === "object" ? step.dsl : modelOutputToBindingDsl(step.output);
-        return serializeBindingDsl(dsl);
-      })
-      .filter(Boolean);
-    if (!bindingStrings.length && activator.axisBinding) {
-      bindingStrings.push(...axisBindingToBindingStrings(activator.axisBinding));
-    }
-    node.activators[`${mapInternalTypeToVdfActivatorKey(activator.type)}_${index}`] = {
-      bindings: {
-        binding: bindingStrings
-      }
-    };
-    if (activator.axisBinding) {
-      node.activators[`${mapInternalTypeToVdfActivatorKey(activator.type)}_${index}`].axisBinding = { ...activator.axisBinding };
-    }
-  });
-  return node;
-}
 
-function axisBindingToBindingStrings(axisBinding) {
-  if (!axisBinding || typeof axisBinding !== "object") return [];
-  const values = [];
-  const slotMap = [
-    ["click", axisBinding.click],
-    ["move", axisBinding.move],
-    ["up", axisBinding.up],
-    ["down", axisBinding.down],
-    ["left", axisBinding.left],
-    ["right", axisBinding.right]
-  ];
-  for (const [slot, output] of slotMap) {
-    if (!output) continue;
-    if (slot === "move") {
-      values.push(serializeBindingDsl(modelOutputToBindingDsl(output === "Mouse Move" ? output : "Mouse Move")));
-    } else {
-      values.push(serializeBindingDsl(modelOutputToBindingDsl(output)));
-    }
-  }
-  return values;
-}
 
-function getVdfSourceDescriptorForControl(control) {
-  switch (control.kind) {
-    case "face": {
-      const map = { a: "button_a", b: "button_b", x: "button_x", y: "button_y" };
-      const inputName = map[control.id];
-      return inputName ? { source: "button_diamond", inputName } : null;
-    }
-    case "dpad": {
-      const map = {
-        dpad_up: "dpad_north",
-        dpad_down: "dpad_south",
-        dpad_left: "dpad_west",
-        dpad_right: "dpad_east"
-      };
-      const inputName = map[control.id];
-      return inputName ? { source: "dpad", inputName } : null;
-    }
-    case "stick": {
-      const source = control.id === "right_stick" ? "right_joystick" : "joystick";
-      return { source, inputName: "click" };
-    }
-    case "pad": {
-      const source = control.id === "left_pad" ? "left_trackpad" : "right_trackpad";
-      return { source, inputName: "click" };
-    }
-    case "trigger":
-      return { source: control.id === "left_trigger" ? "left_trigger" : "right_trigger", inputName: "edge" };
-    case "bumper": {
-      const map = { left_bumper: "left_bumper", right_bumper: "right_bumper" };
-      const inputName = map[control.id];
-      return inputName ? { source: "switch", inputName } : null;
-    }
-    case "utility": {
-      const map = {
-        view: "button_escape",
-        menu: "button_menu",
-        steam: "button_steam",
-        quick_access: "button_capture"
-      };
-      const inputName = map[control.id];
-      return inputName ? { source: "switch", inputName } : null;
-    }
-    case "rear": {
-      const map = {
-        left_grip_4: "button_back_left_upper",
-        left_grip_5: "button_back_left_lower",
-        right_grip_4: "button_back_right_upper",
-        right_grip_5: "button_back_right_lower"
-      };
-      const inputName = map[control.id];
-      return inputName ? { source: "switch", inputName } : null;
-    }
-    default:
-      return null;
-  }
-}
 
-function serializeVdfTree(value) {
-  return serializeVdfNode(value, 0);
-}
-
-function serializeVdfNode(value, depth, key = null) {
-  const indent = "  ".repeat(depth);
-  if (Array.isArray(value)) {
-    return value.map((item) => serializeVdfNode(item, depth, key)).filter(Boolean).join("\n");
-  }
-  if (value && typeof value === "object") {
-    if (key == null) {
-      return Object.entries(value)
-        .map(([childKey, childValue]) => serializeVdfNode(childValue, depth, childKey))
-        .filter(Boolean)
-        .join("\n");
-    }
-    const entries = Object.entries(value)
-      .map(([childKey, childValue]) => serializeVdfNode(childValue, depth + 1, childKey))
-      .filter(Boolean)
-      .join("\n");
-    return `${indent}"${escapeVdfString(key)}"\n${indent}{\n${entries}\n${indent}}`;
-  }
-  if (key == null) return "";
-  return `${indent}"${escapeVdfString(key)}" "${escapeVdfString(value == null ? "" : String(value))}"`;
-}
-
-function escapeVdfString(value) {
-  return String(value).replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
-}
 
 function exportCurrentLayoutVdf() {
-  const text = buildVdfExportText();
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "steamdeck-layout.vdf";
-  a.click();
-  URL.revokeObjectURL(a.href);
-  setLayoutStatus("Exported current layout as VDF.", false);
+  const config = buildControllerConfig({
+    title: state.layoutTitle || DEFAULT_EXPORT_NAME,
+    description: state.layoutDescription,
+    presets: state.presets.map(expandAxisBindingsForExport)
+  });
+  const filename = `${sanitizeFilenameSegment(state.layoutTitle) || "steamdeck-layout"}.vdf`;
+  downloadBlob(new Blob([serializeVdf(config)], { type: "text/plain;charset=utf-8" }), filename);
+  setLayoutStatus(`Exported current layout as ${filename}.`, false);
+}
+
+const AXIS_SLOT_INPUTS = { click: "click", up: "dpad_north", down: "dpad_south", left: "dpad_west", right: "dpad_east" };
+
+/**
+ * The editor's stick/pad slots become Steam sub-inputs: directions use the
+ * directional pad mode, otherwise the control acts as a mouse.
+ */
+function expandAxisBindingsForExport(preset) {
+  const bindings = {};
+  const modes = { ...preset.modes };
+  for (const [controlId, activators] of Object.entries(preset.bindings)) {
+    const control = getControlById(controlId);
+    const expanded = [];
+    for (const activator of activators) {
+      if (activator.input || !axisBindingHasSlots(activator.axisBinding) || (control?.kind !== "stick" && control?.kind !== "pad")) {
+        expanded.push(activator);
+        continue;
+      }
+      const axis = activator.axisBinding;
+      for (const [slot, input] of Object.entries(AXIS_SLOT_INPUTS)) {
+        if (axis[slot]) expanded.push({ ...createDefaultActivator(axis[slot]), input });
+      }
+      const hasDirections = ["up", "down", "left", "right"].some((slot) => axis[slot]);
+      if (!modes[controlId]) {
+        const mouseMode = control.kind === "stick" ? "joystick_mouse" : "absolute_mouse";
+        modes[controlId] = { mode: hasDirections && axis.mode !== "mouse_move" ? "dpad" : mouseMode, settings: {} };
+      }
+    }
+    bindings[controlId] = expanded;
+  }
+  return { ...preset, bindings, modes };
 }
 
 async function loadLayoutFromStorage() {
   if ("showOpenFilePicker" in window) {
     try {
       const [handle] = await window.showOpenFilePicker({
-        types: [
-          {
-            description: "JSON Files",
-            accept: { "application/json": [".json"] }
-          }
-        ],
+        types: [{ description: "Layouts", accept: { "application/json": [".json"], "text/plain": [".vdf"] } }],
         multiple: false
       });
       if (!handle) return;
       const file = await handle.getFile();
-      const text = await file.text();
-      await handleLayoutText(text);
-      setLayoutStatus("Layout loaded via File System Access.", false);
-      return;
+      await handleLayoutFile(file);
     } catch (error) {
-      if (error.name === "AbortError") return;
-      setLayoutStatus("Loading layout failed.", true);
-      return;
+      if (error.name !== "AbortError") setLayoutStatus("Loading layout failed.", true);
     }
+    return;
   }
   el.fileInput.click();
 }
 
-async function handleLayoutText(text) {
+/** Loads a layout JSON or Steam Input VDF; returns whether it was applied. */
+function handleLayoutText(text, sourceLabel = "file") {
+  const trimmed = text.trimStart();
   try {
-    const json = JSON.parse(text);
-    applyLayoutData(json, true);
-    renderBindings();
-    updateSelectionInfo();
-    renderBindingOverlays();
-    setLayoutStatus("Layout loaded.", false);
+    if (trimmed.startsWith("{")) {
+      applyLayoutData(JSON.parse(text), true);
+      state.layoutGeneration += 1;
+      replaceLayoutUrlParam(state.loadedLayoutMeta?.file_id ?? null);
+      refreshBindingViews();
+      setLayoutStatus(`Layout loaded from ${sourceLabel}.`, false);
+    } else {
+      applyVdfLayout(text, null);
+    }
+    return true;
   } catch {
-    setLayoutStatus("Invalid layout data.", true);
+    setLayoutStatus(`Could not read the layout ${sourceLabel}: expected layout JSON or a Steam Input VDF.`, true);
+    return false;
   }
+}
+
+async function handleLayoutFile(file, sourceLabel = "file") {
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    setLayoutStatus(`Could not read ${file.name}.`, true);
+    return false;
+  }
+  return handleLayoutText(text, sourceLabel);
 }
 
 function initScene() {
@@ -2508,7 +2705,9 @@ function initScene() {
     }
   };
 
+  let pointerDownAt = null;
   renderer.domElement.addEventListener("pointerdown", (event) => {
+    pointerDownAt = { x: event.clientX, y: event.clientY };
     if (!state.paintMode) return;
     isPainting = true;
     orbitControls.enabled = false;
@@ -2523,11 +2722,15 @@ function initScene() {
     if (isPainting) {
       isPainting = false;
       orbitControls.enabled = !state.paintMode;
+      updateControlFromPaintedRegion(state.selectedControlId);
+      schedulePersistCurrentLayoutState();
     }
   });
 
   renderer.domElement.addEventListener("click", (event) => {
     if (state.paintMode) return;
+    // Releasing after rotating the deck is not a selection.
+    if (pointerDownAt && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) > 4) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2545,16 +2748,30 @@ function initScene() {
     }
   });
 
-  window.addEventListener("resize", () => {
-    camera.aspect = el.deckContainer.clientWidth / el.deckContainer.clientHeight;
+  const resize = () => {
+    const width = el.deckContainer.clientWidth;
+    const height = el.deckContainer.clientHeight;
+    if (!width || !height) return;
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(el.deckContainer.clientWidth, el.deckContainer.clientHeight);
+    renderer.setSize(width, height);
+    overlayDirty = true;
+  };
+  new ResizeObserver(resize).observe(el.deckContainer);
+  orbitControls.addEventListener("change", () => {
+    overlayDirty = true;
   });
 
   const animate = () => {
-    updateSelectionAnimation();
+    if (selectionAnimation) {
+      updateSelectionAnimation();
+      overlayDirty = true;
+    }
     orbitControls.update();
-    renderBindingOverlays();
+    if (overlayDirty) {
+      overlayDirty = false;
+      renderBindingOverlays();
+    }
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
   };
@@ -2608,13 +2825,15 @@ function loadDeckModel(deckRoot) {
       deckRoot.add(mesh);
       updateDeckVisualTheme();
       applyPendingPaintRegions();
-      setDeckStatus("Steam Deck shell model loaded.");
+      modelStatusMessage = "Steam Deck shell model loaded.";
+      setDeckStatus(modelStatusMessage);
     },
     undefined,
     () => {
       deckRoot.add(createFallbackDeckBody());
       updateDeckVisualTheme();
-      setDeckStatus("Steam Deck shell model failed to load. Showing fallback body.", true);
+      modelStatusMessage = "Steam Deck shell model failed to load. Showing fallback body.";
+      setDeckStatus(modelStatusMessage, true);
     }
   );
 }
@@ -3021,649 +3240,42 @@ function clamp(value, min, max) {
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-function parseVdf(text) {
-  const tokens = tokenizeVdf(text);
-  let index = 0;
 
-  function parseValue() {
-    const token = tokens[index];
-    if (!token) return null;
-    if (token.type === "{") {
-      index += 1;
-      return parseObject();
-    }
-    index += 1;
-    return token.value;
-  }
 
-  function parseObject() {
-    const result = {};
-    while (index < tokens.length) {
-      const token = tokens[index];
-      if (!token) break;
-      if (token.type === "}") {
-        index += 1;
-        break;
-      }
-      if (token.type !== "string") {
-        index += 1;
-        continue;
-      }
-      const key = token.value;
-      index += 1;
-      const value = parseValue();
-      if (Object.hasOwn(result, key)) {
-        result[key] = Array.isArray(result[key]) ? [...result[key], value] : [result[key], value];
-      } else {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
 
-  return parseObject();
-}
 
-function tokenizeVdf(text) {
-  const tokens = [];
-  let index = 0;
 
-  while (index < text.length) {
-    const char = text[index];
-    if (/\s/.test(char)) {
-      index += 1;
-      continue;
-    }
-    if (char === "{") {
-      tokens.push({ type: "{", value: "{" });
-      index += 1;
-      continue;
-    }
-    if (char === "}") {
-      tokens.push({ type: "}", value: "}" });
-      index += 1;
-      continue;
-    }
-    if (char === "\"") {
-      let value = "";
-      index += 1;
-      while (index < text.length) {
-        const current = text[index];
-        if (current === "\\" && index + 1 < text.length) {
-          value += text[index + 1];
-          index += 2;
-          continue;
-        }
-        if (current === "\"") {
-          index += 1;
-          break;
-        }
-        value += current;
-        index += 1;
-      }
-      tokens.push({ type: "string", value });
-      continue;
-    }
-    index += 1;
-  }
 
-  return tokens;
-}
 
-function extractBindingsFromLayout(parsedLayout) {
-  const mappings = parsedLayout.controller_mappings ?? parsedLayout;
-  const groups = Object.fromEntries(arrayify(mappings.group).map((group) => [group.id, group]));
-  const preset = arrayify(mappings.preset)[0];
-  const bindings = Object.fromEntries(controls.map((control) => [control.id, []]));
-  if (!preset?.group_source_bindings) return bindings;
 
-  for (const [groupId, descriptor] of Object.entries(preset.group_source_bindings)) {
-    if (typeof descriptor !== "string") continue;
-    const parts = descriptor.trim().split(/\s+/);
-    if (parts.at(-1) !== "active") continue;
-    const source = parts[0];
-    const group = groups[groupId];
-    if (!group) continue;
-    applyGroupBindings(bindings, source, group);
-  }
 
-  for (const controlId of Object.keys(bindings)) {
-    bindings[controlId] = dedupeActivators(bindings[controlId]);
-  }
-  return bindings;
-}
 
-function applyGroupBindings(bindings, source, group) {
-  const inputs = group.inputs ?? {};
-  if (source === "button_diamond") {
-    bindInput(bindings, "a", inputs.button_a);
-    bindInput(bindings, "b", inputs.button_b);
-    bindInput(bindings, "x", inputs.button_x);
-    bindInput(bindings, "y", inputs.button_y);
-    return;
-  }
-  if (source === "dpad") {
-    bindInput(bindings, "dpad_up", inputs.dpad_north);
-    bindInput(bindings, "dpad_down", inputs.dpad_south);
-    bindInput(bindings, "dpad_left", inputs.dpad_west);
-    bindInput(bindings, "dpad_right", inputs.dpad_east);
-    return;
-  }
-  if (source === "left_trackpad" || source === "right_trackpad") {
-    const controlId = source === "left_trackpad" ? "left_pad" : "right_pad";
-    bindCompoundInput(bindings, controlId, inputs, {
-      click: "Click",
-      dpad_north: "North",
-      dpad_south: "South",
-      dpad_east: "East",
-      dpad_west: "West",
-      touch: "Touch"
-    });
-    return;
-  }
-  if (source === "joystick" || source === "left_joystick") {
-    bindCompoundInput(bindings, "left_stick", inputs, { click: "Click" });
-    return;
-  }
-  if (source === "right_joystick") {
-    bindCompoundInput(bindings, "right_stick", inputs, { click: "Click" });
-    return;
-  }
-  if (source === "left_trigger") {
-    bindCompoundInput(bindings, "left_trigger", inputs, { edge: "Pull", Soft_Pull: "Soft", Full_Pull: "Full" });
-    return;
-  }
-  if (source === "right_trigger") {
-    bindCompoundInput(bindings, "right_trigger", inputs, { edge: "Pull", Soft_Pull: "Soft", Full_Pull: "Full" });
-    return;
-  }
-  if (source === "switch") {
-    const switchMap = {
-      button_escape: "view",
-      button_menu: "menu",
-      button_steam: "steam",
-      button_capture: "quick_access",
-      left_bumper: "left_bumper",
-      right_bumper: "right_bumper",
-      button_back_left: "left_grip_4",
-      button_back_right: "right_grip_4",
-      button_back_left_upper: "left_grip_4",
-      button_back_left_lower: "left_grip_5",
-      button_back_right_upper: "right_grip_4",
-      button_back_right_lower: "right_grip_5"
-    };
-    for (const [inputName, controlId] of Object.entries(switchMap)) {
-      bindInput(bindings, controlId, inputs[inputName]);
-    }
-  }
-}
 
-function bindInput(bindings, controlId, input) {
-  if (!input || !bindings[controlId]) return;
-  const activators = mapInputToActivators(input);
-  bindings[controlId].push(...activators);
-}
 
-function bindCompoundInput(bindings, controlId, inputs, labels) {
-  if (!bindings[controlId]) return;
-  for (const [inputName, label] of Object.entries(labels)) {
-    const activators = mapInputToActivators(inputs[inputName], { displayPrefix: label });
-    if (!activators.length) continue;
-    bindings[controlId].push(...activators);
-  }
-}
 
-function mapInputToActivators(input, options = {}) {
-  if (!input || typeof input !== "object") return [];
-  const { displayPrefix = "" } = options;
-  const activatorEntries = [];
-  if (input.activators && typeof input.activators === "object") {
-    activatorEntries.push(...Object.entries(input.activators));
-  } else {
-    activatorEntries.push(["Full_Press", input]);
-  }
 
-  const mapped = [];
-  activatorEntries.forEach(([vdfActivatorKey, activatorNode], index) => {
-    const bindingStrings = extractBindingStringsFromActivatorNode(activatorNode);
-    if (!bindingStrings.length) return;
-    const internalType = mapVdfActivatorKeyToInternalType(vdfActivatorKey);
-    const actions = bindingStrings
-      .map((binding) => {
-        if (typeof binding !== "string" || !binding.trim()) return null;
-        const dsl = parseBindingDSL(binding);
-        if (!dsl.command) return null;
-        const outputCore = bindingDslToModelOutput(dsl);
-        const output = displayPrefix ? `${displayPrefix}: ${outputCore}` : outputCore;
-        return { output, delayMs: 0, dsl };
-      })
-      .filter(Boolean);
-    if (!actions.length) return;
-    const next = createDefaultActivator("", index);
-    next.type = internalType;
-    next.actions = actions;
-    next.binding = actions[0]?.output ?? "";
-    next.axisBinding = extractAxisBindingFromActivatorNode(activatorNode);
-    mapped.push(sanitizeActivator(next, index));
-  });
 
-  return mapped;
-}
 
-function extractBindingStringsFromActivatorNode(node) {
-  if (!node || typeof node !== "object") return [];
-  const values = arrayify(node.bindings?.binding);
-  return values.filter((entry) => typeof entry === "string" && entry.trim());
-}
 
-function extractAxisBindingFromActivatorNode(node) {
-  if (!node || typeof node !== "object" || !node.axisBinding || typeof node.axisBinding !== "object") return null;
-  return sanitizeAxisBinding(node.axisBinding);
-}
 
-function mapVdfActivatorKeyToInternalType(key) {
-  const normalized = String(key ?? "").trim().replace(/_\d+$/, "");
-  switch (normalized) {
-    case "Double_Press":
-      return "double_press";
-    case "Long_Press":
-      return "long_press";
-    case "Start_Press":
-      return "start_press";
-    case "Release_Press":
-      return "release_press";
-    case "Chorded_Press":
-      return "chorded_press";
-    case "Soft_Pull":
-    case "edge":
-    case "Full_Press":
-    default:
-      return "regular_press";
-  }
-}
 
-function mapInternalTypeToVdfActivatorKey(type) {
-  switch (type) {
-    case "double_press":
-      return "Double_Press";
-    case "long_press":
-      return "Long_Press";
-    case "start_press":
-      return "Start_Press";
-    case "release_press":
-      return "Release_Press";
-    case "chorded_press":
-      return "Chorded_Press";
-    case "regular_press":
-    default:
-      return "Full_Press";
-  }
-}
 
-function formatBindingText(binding) {
-  const parsed = parseBindingDSL(binding);
-  if (!parsed.command) return "";
 
-  const base = bindingDslToModelOutput(parsed);
-  if (!base) return "";
-  const meta = formatBindingMeta(parsed);
-  return meta ? `${base} - ${meta}` : base;
-}
 
-function parseBindingDSL(binding) {
-  const parts = splitBindingFields(binding).map((part) => part.trim());
-  const [head = "", ...meta] = parts;
-  const [command = "", ...argTokens] = head.split(/\s+/).filter(Boolean);
-  const argsRaw = argTokens.join(" ").trim();
-  return {
-    raw: binding,
-    command: command.toLowerCase(),
-    commandRaw: command,
-    argsRaw,
-    argTokens,
-    label: meta[0] ?? "",
-    icon: meta[1] ?? "",
-    colors: meta[2] ?? "",
-    extra: meta.slice(3)
-  };
-}
 
-function splitBindingFields(text) {
-  const parts = [];
-  let current = "";
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === "," && text[index - 1] !== "\\") {
-      parts.push(current);
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  parts.push(current);
-  return parts;
-}
 
-function bindingDslToModelOutput(parsed) {
-  const { command, argsRaw, argTokens } = parsed;
-  switch (command) {
-    case "key_press":
-      return formatKeyShortcut(argsRaw);
-    case "mouse_button":
-      return `${formatToken(argsRaw)} Mouse`;
-    case "mouse_move":
-      return "Mouse Move";
-    case "mouse_wheel":
-      return formatToken(argsRaw).replace("Scroll ", "Wheel ");
-    case "xinput_button":
-      return `Pad ${formatToken(argsRaw)}`;
-    case "mode_shift":
-      if (argTokens.length >= 2) return `Mode Shift ${formatToken(argTokens[0])} -> Group ${argTokens[1]}`;
-      return `Mode Shift ${formatToken(argsRaw)}`;
-    case "controller_action":
-      return formatControllerAction(argsRaw, argTokens);
-    default:
-      return `${formatToken(parsed.commandRaw || command)}${argsRaw ? ` ${formatToken(argsRaw)}` : ""}`.trim();
-  }
-}
 
-function formatControllerAction(argsRaw, argTokens) {
-  if (!argsRaw) return "Controller Action";
-  const normalized = argsRaw.toLowerCase();
-  if (normalized === "empty_sub_command" || normalized === "empty_binding") return "No Action";
-  if (normalized.startsWith("hold_layer")) {
-    const layer = argTokens[1] ? ` ${argTokens[1]}` : "";
-    return `Hold Layer${layer}`;
-  }
-  if (normalized.startsWith("switch_layer")) {
-    const layer = argTokens[1] ? ` ${argTokens[1]}` : "";
-    return `Switch Layer${layer}`;
-  }
-  return formatToken(argsRaw);
-}
 
-function modelOutputToBindingDsl(output) {
-  const text = String(output ?? "").trim();
-  if (!text) {
-    return {
-      command: "controller_action",
-      commandRaw: "controller_action",
-      argsRaw: "empty_sub_command",
-      argTokens: ["empty_sub_command"],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
 
-  const stripped = stripDisplayPrefix(text);
-  if (stripped === "No Action") {
-    return {
-      command: "controller_action",
-      commandRaw: "controller_action",
-      argsRaw: "empty_sub_command",
-      argTokens: ["empty_sub_command"],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped === "Wheel Up") {
-    return {
-      command: "mouse_wheel",
-      commandRaw: "mouse_wheel",
-      argsRaw: "SCROLL_UP",
-      argTokens: ["SCROLL_UP"],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped === "Wheel Down") {
-    return {
-      command: "mouse_wheel",
-      commandRaw: "mouse_wheel",
-      argsRaw: "SCROLL_DOWN",
-      argTokens: ["SCROLL_DOWN"],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped === "Left Mouse" || stripped === "Right Mouse" || stripped === "Middle Mouse") {
-    const button = stripped.replace(" Mouse", "").toUpperCase();
-    return {
-      command: "mouse_button",
-      commandRaw: "mouse_button",
-      argsRaw: button,
-      argTokens: [button],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped === "Mouse Move") {
-    return {
-      command: "mouse_move",
-      commandRaw: "mouse_move",
-      argsRaw: "MOVE",
-      argTokens: ["MOVE"],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped.startsWith("Pad ")) {
-    const token = stripped.slice(4).trim().replaceAll(" ", "_");
-    return {
-      command: "xinput_button",
-      commandRaw: "xinput_button",
-      argsRaw: token,
-      argTokens: [token],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
-  if (stripped.startsWith("Mode Shift ")) {
-    const match = stripped.match(/^Mode Shift\s+(.+?)\s*->\s*Group\s+(\d+)$/i);
-    const source = match?.[1]?.trim().replaceAll(" ", "_").toLowerCase() || stripped.slice("Mode Shift ".length).trim().replaceAll(" ", "_").toLowerCase();
-    const groupId = match?.[2] ?? "";
-    const argsRaw = groupId ? `${source} ${groupId}` : source;
-    return {
-      command: "mode_shift",
-      commandRaw: "mode_shift",
-      argsRaw,
-      argTokens: argsRaw ? argsRaw.split(/\s+/).filter(Boolean) : [],
-      label: "",
-      icon: "",
-      colors: "",
-      extra: [],
-      raw: ""
-    };
-  }
 
-  const keyArgs = stripped
-    .split("+")
-    .map((token) => mapModelKeyTokenToVdfToken(token.trim()))
-    .filter(Boolean)
-    .join("+");
-  return {
-    command: "key_press",
-    commandRaw: "key_press",
-    argsRaw: keyArgs || mapModelKeyTokenToVdfToken(stripped),
-    argTokens: (keyArgs || mapModelKeyTokenToVdfToken(stripped)).split(/\s+/).filter(Boolean),
-    label: "",
-    icon: "",
-    colors: "",
-    extra: [],
-    raw: ""
-  };
-}
-
-function stripDisplayPrefix(output) {
-  const match = output.match(/^(Click|North|South|East|West|Touch|Pull|Soft|Full):\s+(.+)$/);
-  return match ? match[2] : output;
-}
-
-function mapModelKeyTokenToVdfToken(token) {
-  const normalized = token.toUpperCase().replaceAll(" ", "_");
-  const map = {
-    UP: "UP_ARROW",
-    DOWN: "DOWN_ARROW",
-    LEFT: "LEFT_ARROW",
-    RIGHT: "RIGHT_ARROW",
-    ESC: "ESCAPE",
-    CTRL: "LEFT_CONTROL",
-    CONTROL: "LEFT_CONTROL",
-    ALT: "LEFT_ALT",
-    SHIFT: "LEFT_SHIFT",
-    PAGE_DOWN: "PAGE_DOWN",
-    PAGE_UP: "PAGE_UP",
-    NUM0: "KEYPAD_0",
-    NUM1: "KEYPAD_1",
-    NUM2: "KEYPAD_2",
-    NUM3: "KEYPAD_3",
-    NUM4: "KEYPAD_4",
-    NUM5: "KEYPAD_5",
-    NUM6: "KEYPAD_6",
-    NUM7: "KEYPAD_7",
-    NUM8: "KEYPAD_8",
-    NUM9: "KEYPAD_9"
-  };
-  return map[normalized] ?? normalized;
-}
-
-function serializeBindingDsl(parsed) {
-  const normalized = sanitizeBindingDsl(parsed);
-  if (!normalized) return "";
-  if (normalized.raw && normalized.raw.includes(",") && normalized.command === normalized.commandRaw.toLowerCase()) {
-    return normalized.raw;
-  }
-  const head = [normalized.commandRaw || normalized.command, normalized.argsRaw].filter(Boolean).join(" ").trim();
-  const fields = [normalized.label || "", normalized.icon || "", normalized.colors || "", ...normalized.extra];
-  return `${head}, ${fields.join(", ")}`;
-}
-
-function buildVdfBindingsPayload() {
-  return Object.fromEntries(
-    controls.map((control) => [control.id, activatorsToVdfBindings(getControlActivators(control.id))])
-  );
-}
-
-function activatorsToVdfBindings(activators) {
-  return activators.map((activator) => ({
-    activator: mapInternalTypeToVdfActivatorKey(activator.type),
-    bindings: activator.actions
-      .map((step) => {
-        const dsl = step.dsl && typeof step.dsl === "object" ? step.dsl : modelOutputToBindingDsl(step.output);
-        return serializeBindingDsl(dsl);
-      })
-      .filter(Boolean),
-    axisBinding: activator.axisBinding ? { ...activator.axisBinding } : null
-  }));
-}
-
-function dedupeActivators(activators) {
-  const seen = new Set();
-  return activators.filter((activator) => {
-    const signature = JSON.stringify({
-      type: activator.type,
-      actions: activator.actions.map((step) => step.dsl?.raw || step.output),
-      axisBinding: activator.axisBinding ?? null
-    });
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
-}
-
-function formatBindingMeta(parsed) {
-  const parts = [];
-  if (parsed.label) {
-    if (parsed.label.startsWith("#")) {
-      parts.push(`Label ${parsed.label} (localized)`);
-    } else {
-      parts.push(parsed.label);
-    }
-  }
-  if (parsed.icon) parts.push(`Icon ${parsed.icon}`);
-  if (parsed.colors) parts.push(`Colors ${parsed.colors}`);
-  parsed.extra.filter(Boolean).forEach((extra) => parts.push(extra));
-  return parts.join(" | ");
-}
-
-function formatKeyShortcut(arg) {
-  if (!arg) return "";
-  return arg
-    .split("+")
-    .map((token) => formatToken(mapVdfKeyTokenToModelToken(token.trim())))
-    .filter(Boolean)
-    .join("+");
-}
-
-function mapVdfKeyTokenToModelToken(token) {
-  const normalized = token.toUpperCase();
-  const map = {
-    UP_ARROW: "Up",
-    DOWN_ARROW: "Down",
-    LEFT_ARROW: "Left",
-    RIGHT_ARROW: "Right",
-    LEFT_CONTROL: "Ctrl",
-    RIGHT_CONTROL: "Ctrl",
-    LEFT_ALT: "Alt",
-    RIGHT_ALT: "Alt",
-    LEFT_SHIFT: "Shift",
-    RIGHT_SHIFT: "Shift",
-    ESCAPE: "Esc",
-    KEYPAD_0: "Num0",
-    KEYPAD_1: "Num1",
-    KEYPAD_2: "Num2",
-    KEYPAD_3: "Num3",
-    KEYPAD_4: "Num4",
-    KEYPAD_5: "Num5",
-    KEYPAD_6: "Num6",
-    KEYPAD_7: "Num7",
-    KEYPAD_8: "Num8",
-    KEYPAD_9: "Num9"
-  };
-  return map[normalized] ?? token;
-}
-
-function formatToken(value) {
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function dedupeStrings(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function arrayify(value) {
-  if (value == null) return [];
-  return Array.isArray(value) ? value : [value];
-}
 
 function getDefaultControl(controlId) {
   return DEFAULT_CONTROLS.find((control) => control.id === controlId);
@@ -3841,11 +3453,15 @@ function togglePaintMode() {
   orbitControls.enabled = !state.paintMode;
   shellPreviewFaces.clear();
   recolorShellRegions();
-  setDeckStatus(
-    state.paintMode && state.selectedControlId
+  if (!state.paintMode) {
+    setDeckStatus(modelStatusMessage, !shellMesh);
+  } else if (!shellMesh) {
+    setDeckStatus("Painting needs the shell model, which is not loaded.", true);
+  } else {
+    setDeckStatus(state.selectedControlId
       ? "Paint mode active. Click the shell to assign a region to the selected control."
-      : "Steam Deck shell model loaded."
-  );
+      : "Paint mode active. Select a control in the bindings list first.");
+  }
 }
 
 function clearSelectedPaintRegion() {
@@ -3860,6 +3476,7 @@ function clearSelectedPaintRegion() {
   if (changed) {
     controlSurfaceNormals.delete(state.selectedControlId);
     recolorShellRegions();
+    schedulePersistCurrentLayoutState();
   }
 }
 
@@ -3888,7 +3505,6 @@ function paintShellRegion(intersection) {
   }
   shellPreviewFaces = new Set(regionFaces);
   recolorShellRegions();
-  updateControlFromPaintedRegion(state.selectedControlId);
 }
 
 function collectShellFaces(seedFaceIndex, hitPoint) {
@@ -3920,28 +3536,41 @@ function collectShellFaces(seedFaceIndex, hitPoint) {
   return result;
 }
 
+const shellColorCache = new Map();
+
+function getCachedColor(hex) {
+  let color = shellColorCache.get(hex);
+  if (!color) {
+    color = new THREE.Color(hex);
+    shellColorCache.set(hex, color);
+  }
+  return color;
+}
+
 function recolorShellRegions() {
   if (!shellGeometry) return;
   const colorAttr = shellGeometry.getAttribute("color");
+  const colors = colorAttr.array;
   const lightTheme = isLightTheme();
-  const baseColor = new THREE.Color(lightTheme ? 0x7f8ba3 : 0x2f3747);
-  const selectedColor = new THREE.Color(lightTheme ? 0xc02424 : state.paintMode ? 0xff9999 : 0xff7373);
-  const previewColor = new THREE.Color(lightTheme ? 0xff7d4a : 0xffa366);
+  const baseColor = getCachedColor(lightTheme ? 0x7f8ba3 : 0x2f3747);
+  const selectedColor = getCachedColor(lightTheme ? 0xc02424 : state.paintMode ? 0xff9999 : 0xff7373);
+  const previewColor = getCachedColor(lightTheme ? 0xff7d4a : 0xffa366);
+  const ownerColors = new Map(controls.map((control) => [control.id, getCachedColor(getControlColor(control.kind))]));
 
   for (let faceIndex = 0; faceIndex < shellFaceOwners.length; faceIndex += 1) {
     const owner = shellFaceOwners[faceIndex];
-    const ownerControl = owner ? getControlById(owner) : null;
-    const paintedColor = new THREE.Color(getControlColor(ownerControl?.kind));
     const color = shellPreviewFaces.has(faceIndex)
       ? previewColor
       : owner && owner === state.selectedControlId
         ? selectedColor
-      : owner
-        ? paintedColor
-        : baseColor;
-    for (let vertexOffset = 0; vertexOffset < 3; vertexOffset += 1) {
-      const vertexIndex = faceIndex * 3 + vertexOffset;
-      colorAttr.setXYZ(vertexIndex, color.r, color.g, color.b);
+        : owner
+          ? ownerColors.get(owner) ?? baseColor
+          : baseColor;
+    const offset = faceIndex * 9;
+    for (let vertex = 0; vertex < 9; vertex += 3) {
+      colors[offset + vertex] = color.r;
+      colors[offset + vertex + 1] = color.g;
+      colors[offset + vertex + 2] = color.b;
     }
   }
 
@@ -3960,8 +3589,7 @@ function updateControlFromPaintedRegion(controlId) {
   if (regionStats) controlSurfaceNormals.set(controlId, regionStats.normal.clone());
   const anchor = getStableRegionAnchor(regionFaces);
   control.pos = [anchor.x, anchor.y, anchor.z];
-  recolorShellRegions();
-  updateSelectionInfo();
+  overlayDirty = true;
 }
 
 function getStableRegionAnchor(regionFaces) {
@@ -4053,7 +3681,8 @@ function getVertexKey(positionAttr, vertexIndex) {
 }
 
 function serializePaintRegions() {
-  if (!shellFaceOwners.length) return {};
+  // Until the model has loaded, the regions only exist as pending data.
+  if (!shellFaceOwners.length) return pendingPaintRegions ?? {};
   const regions = {};
   for (let faceIndex = 0; faceIndex < shellFaceOwners.length; faceIndex += 1) {
     const owner = shellFaceOwners[faceIndex];
@@ -4079,6 +3708,8 @@ function applyPendingPaintRegions() {
   shellPreviewFaces.clear();
   recolorShellRegions();
   pendingPaintRegions = null;
+  updateSelectionInfo();
+  schedulePersistCurrentLayoutState();
 }
 
 function getControlById(controlId) {

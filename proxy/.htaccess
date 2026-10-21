@@ -1,0 +1,16 @@
+Options -Indexes
+
+# Only api.php is public; config and cache stay private.
+<FilesMatch "^(?!api\.php$).+">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^cache/ - [F,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000" "expr=%{HTTPS} == 'on'"
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>

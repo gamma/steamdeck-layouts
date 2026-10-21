@@ -1,0 +1,11 @@
+{
+  "name": "Steam Deck Layout Studio",
+  "author": "Gerry Weißbach",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["controller", "layout", "cheat-sheet"],
+    "description": "Shows the controller layout of the running game as a cheat sheet: action sets, layers, modes and back buttons.",
+    "image": "https://opengraph.githubassets.com/1/gamma/steamdeck-layouts"
+  }
+}
